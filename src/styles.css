@@ -113,6 +113,7 @@ body {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.55rem;
+  margin-top: 0.5rem;
   margin-bottom: 0.65rem;
   background: color-mix(in srgb, var(--panel) 92%, var(--bg));
 }
@@ -304,24 +305,6 @@ h3 {
   flex: 1;
   min-width: 140px;
   accent-color: #7e8a97;
-}
-
-.tone-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin: 0;
-  font-size: 0.82rem;
-  white-space: nowrap;
-}
-
-.tone-header select {
-  width: auto;
-  min-width: 112px;
-  height: 30px;
-  padding: 0.2rem 0.35rem;
-  border-color: color-mix(in srgb, var(--line) 80%, transparent);
-  background: color-mix(in srgb, var(--panel) 95%, #f0f2f5 5%);
 }
 
 .synth-menu {

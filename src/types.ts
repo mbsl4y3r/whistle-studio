@@ -4,6 +4,7 @@ export type GridType = "quarter" | "eighth" | "sixteenth";
 export type AnalysisMode = "monophonic" | "full_mix";
 export type OutputStyle = "lead_only" | "auto_arrange";
 export type RetroStyle = "snes_lite" | "nes";
+export type ContinuityMode = "seamless" | "natural";
 
 export interface MelodyStep {
   note: string;
@@ -89,6 +90,8 @@ export interface ProjectRecord {
   analysisMode: AnalysisMode;
   outputStyle?: OutputStyle;
   retroStyle?: RetroStyle;
+  continuityMode?: ContinuityMode;
+  continuityIntensity?: number;
   overrideAutoSettings?: boolean;
   overrideBpmKey?: boolean;
   melody: MelodyStep[];
@@ -133,7 +136,7 @@ export interface AnalyzeResult {
   suggestedScale: ScaleType;
   warning?: string;
   debug?: {
-    backend: "pitchy" | "essentia-melodia";
+    backend?: "pitchy" | "essentia-melodia";
     bpm?: number;
     bpmConfidence?: number;
     keyStrength?: number;
@@ -142,5 +145,9 @@ export interface AnalyzeResult {
     midiMin?: number;
     midiMedian?: number;
     midiMax?: number;
+    continuityMode?: ContinuityMode;
+    continuityRemovedRests?: number;
+    continuityShortenedRests?: number;
+    continuityFillsInserted?: number;
   };
 }
