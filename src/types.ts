@@ -2,10 +2,49 @@ export type ScaleType = "major" | "minor";
 export type KeyMode = "auto" | "manual";
 export type GridType = "quarter" | "eighth" | "sixteenth";
 export type AnalysisMode = "monophonic" | "full_mix";
+export type OutputStyle = "lead_only" | "auto_arrange";
+export type RetroStyle = "snes_lite" | "nes";
 
 export interface MelodyStep {
   note: string;
   beats: number;
+  velocity?: number;
+}
+
+export type ChipChannelName = "lead" | "bass" | "arp";
+
+export interface ChipChannel {
+  name: ChipChannelName;
+  wave: "pulse" | "triangle" | "noise";
+  melody: MelodyStep[];
+}
+
+export interface ChiptuneArrangement {
+  version: 1;
+  bpm: number;
+  key: string;
+  scale: ScaleType;
+  ppq: number;
+  channels: ChipChannel[];
+}
+
+export type TrackRole = "lead" | "harmony" | "bass" | "drums";
+
+export interface ArrangementTrack {
+  role: TrackRole;
+  name: string;
+  tonePreset: "pulse_lead" | "warm_square" | "soft_saw" | "fm_bell" | "bass_pick" | "snes_pad" | "noise_kit";
+  midiChannel: number;
+  midiProgram?: number;
+  steps: MelodyStep[];
+  pan?: number;
+}
+
+export interface Arrangement {
+  bpm: number;
+  key: string;
+  scale: ScaleType;
+  tracks: ArrangementTrack[];
 }
 
 export interface Segment {
@@ -48,7 +87,11 @@ export interface ProjectRecord {
   minHz: number;
   maxHz: number;
   analysisMode: AnalysisMode;
+  outputStyle?: OutputStyle;
+  retroStyle?: RetroStyle;
   melody: MelodyStep[];
+  arrangement?: Arrangement;
+  analysisDebug?: AnalyzeResult["debug"];
   segments: Segment[];
   rawAudioBlob?: Blob;
   sourceFileName?: string;
@@ -87,4 +130,15 @@ export interface AnalyzeResult {
   suggestedKey: string;
   suggestedScale: ScaleType;
   warning?: string;
+  debug?: {
+    backend: "pitchy" | "essentia-melodia";
+    bpm?: number;
+    bpmConfidence?: number;
+    keyStrength?: number;
+    voicedPercent?: number;
+    restRatio?: number;
+    midiMin?: number;
+    midiMedian?: number;
+    midiMax?: number;
+  };
 }

@@ -333,6 +333,18 @@ export interface SuggestedAnalysisSettings {
   minNoteMs: number;
 }
 
+export interface PredominantAnalysis {
+  backend: "essentia-melodia" | "pitchy";
+  hopSeconds: number;
+  pitchHz: number[];
+  pitchConfidence: number[];
+  bpm?: number;
+  bpmConfidence?: number;
+  key?: string;
+  scale?: "major" | "minor";
+  keyStrength?: number;
+}
+
 function estimateTempoFromEnvelope(mono: Float32Array, sampleRate: number): number {
   const window = 1024;
   const hop = 512;
@@ -407,6 +419,40 @@ function estimateTripletFeel(mono: Float32Array, sampleRate: number, bpm: number
   const tripletError = median(intervals.map((v) => Math.min(...tripletDivisions.map((d) => quantError(d, v)))));
 
   return tripletError + 0.03 < dupleError;
+}
+
+function buildFramesFromPredominant(p: PredominantAnalysis, options: AnalysisOptions): FrameData[] {
+  const frames: FrameData[] = [];
+  let prevMidi: number | null = null;
+  for (let i = 0; i < p.pitchHz.length; i += 1) {
+    let hz = p.pitchHz[i] ?? 0;
+    const conf = p.pitchConfidence[i] ?? 0;
+    const inRange = hz >= options.minHz && hz <= options.maxHz;
+    let voiced = hz > 0 && conf >= Math.max(0.08, options.clarityThreshold * 0.5) && inRange;
+    let midiFloat: number | undefined;
+    if (voiced) {
+      midiFloat = freqToMidiFloat(hz);
+      if (prevMidi != null) {
+        while (midiFloat - prevMidi > 7) midiFloat -= 12;
+        while (prevMidi - midiFloat > 7) midiFloat += 12;
+      }
+      prevMidi = midiFloat;
+    } else {
+      hz = 0;
+    }
+    frames.push({
+      timeSec: i * p.hopSeconds,
+      durationSec: p.hopSeconds,
+      rms: voiced ? Math.max(0.01, conf) : 0,
+      clarity: conf,
+      isRest: !voiced,
+      pitchHz: hz,
+      midiFloat
+    });
+  }
+  // Bridge short unvoiced gaps.
+  fillShortRestGaps(frames, Math.round(0.22 / Math.max(1e-6, p.hopSeconds)), 2.5);
+  return frames;
 }
 
 function goertzelPower(frame: Float32Array, sampleRate: number, freqHz: number): number {
@@ -574,7 +620,8 @@ function deglitchFullMix(segments: Segment[], minNoteMs: number): Segment[] {
 
 export async function suggestAnalysisSettings(
   buffer: AudioBuffer,
-  options: AnalysisOptions
+  options: AnalysisOptions,
+  predominant?: PredominantAnalysis
 ): Promise<SuggestedAnalysisSettings> {
   const monoRaw = downmixToMono(buffer);
   const monoLead = buildLeadFocusSignal(monoRaw, buffer.sampleRate);
@@ -632,7 +679,10 @@ export async function suggestAnalysisSettings(
   }
 
   const minNoteMs = pitches.length > 500 ? 200 : 140;
-  const bpm = estimateTempoFromEnvelope(mono, buffer.sampleRate);
+  let bpm = predominant?.bpm && Number.isFinite(predominant.bpm) ? predominant.bpm : estimateTempoFromEnvelope(mono, buffer.sampleRate);
+  if (bpm < 55) bpm *= 2;
+  if (bpm > 210) bpm /= 2;
+  bpm = Math.max(60, Math.min(200, Math.round(bpm)));
   const pitchCoverage = broadVoicedFrames / Math.max(1, rmsValues.length);
   const analysisMode = pitchCoverage < 0.45 || clarityThreshold < 0.42 ? "full_mix" : "monophonic";
   const triplets = estimateTripletFeel(mono, buffer.sampleRate, bpm);
@@ -649,14 +699,14 @@ export async function suggestAnalysisSettings(
     tunedRms = clamp(rmsThreshold, 0.0015, 0.01);
     tunedClarity = clamp(clarityThreshold, 0.12, 0.32);
     // Bias away from bass fundamentals, try to follow lead vocal/mid content.
-    tunedMinHz = Math.max(140, Math.min(520, tunedMinHz));
+    tunedMinHz = Math.max(110, Math.min(420, tunedMinHz));
     tunedMaxHz = Math.max(2200, tunedMaxHz);
     if (tunedMaxHz - tunedMinHz < 800) tunedMaxHz = tunedMinHz + 800;
     tunedMinNoteMs = Math.max(70, Math.min(140, minNoteMs));
   } else {
     tunedRms = clamp(rmsThreshold, 0.003, 0.03);
     tunedClarity = clamp(clarityThreshold, 0.35, 0.72);
-    tunedMinHz = Math.max(90, tunedMinHz);
+    tunedMinHz = Math.max(80, Math.min(220, tunedMinHz));
     tunedMaxHz = Math.max(700, tunedMaxHz);
   }
 
@@ -673,7 +723,11 @@ export async function suggestAnalysisSettings(
   };
 }
 
-export async function analyzeAudioBuffer(buffer: AudioBuffer, options: AnalysisOptions): Promise<AnalyzeResult> {
+export async function analyzeAudioBuffer(
+  buffer: AudioBuffer,
+  options: AnalysisOptions,
+  predominant?: PredominantAnalysis
+): Promise<AnalyzeResult> {
   const monoRaw = downmixToMono(buffer);
   const monoLead = buildLeadFocusSignal(monoRaw, buffer.sampleRate);
   const mono = options.analysisMode === "full_mix" ? monoLead : monoRaw;
@@ -682,48 +736,51 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, options: AnalysisO
   const frames: FrameData[] = [];
   const frameDuration = HOP_SIZE / buffer.sampleRate;
   let prevMixMidi: number | undefined;
-
-  for (let start = 0; start + FRAME_SIZE <= mono.length; start += HOP_SIZE) {
-    const frame = mono.slice(start, start + FRAME_SIZE);
-    const rms = computeRms(frame);
-    let [pitch, clarity] = detector.findPitch(frame, buffer.sampleRate);
-    if (options.analysisMode === "full_mix") {
-      const fullMix = estimateFullMixPitchHz(frame, buffer.sampleRate, options.minHz, options.maxHz, prevMixMidi);
-      if (fullMix.pitchHz != null) {
-        pitch = fullMix.pitchHz;
-        clarity = Math.max(clarity * 0.35, fullMix.confidence);
-        prevMixMidi = freqToMidiFloat(fullMix.pitchHz);
-      } else {
-        const rawFrame = monoRaw.slice(start, start + FRAME_SIZE);
-        const [pitchRaw, clarityRaw] = detector.findPitch(rawFrame, buffer.sampleRate);
-        const leadPitch = promotePitchToLeadRange(pitch, options.minHz, options.maxHz);
-        const rawPitch = promotePitchToLeadRange(pitchRaw, options.minHz, options.maxHz);
-        const leadScore = clarity + Math.min(0.25, Math.max(0, (leadPitch - 180) / 1800));
-        const rawScore = clarityRaw + Math.min(0.25, Math.max(0, (rawPitch - 180) / 1800));
-        if (rawScore > leadScore) {
-          pitch = rawPitch;
-          clarity = clarityRaw;
+  if (options.analysisMode === "full_mix" && predominant && predominant.pitchHz.length > 0) {
+    frames.push(...buildFramesFromPredominant(predominant, options));
+  } else {
+    for (let start = 0; start + FRAME_SIZE <= mono.length; start += HOP_SIZE) {
+      const frame = mono.slice(start, start + FRAME_SIZE);
+      const rms = computeRms(frame);
+      let [pitch, clarity] = detector.findPitch(frame, buffer.sampleRate);
+      if (options.analysisMode === "full_mix") {
+        const fullMix = estimateFullMixPitchHz(frame, buffer.sampleRate, options.minHz, options.maxHz, prevMixMidi);
+        if (fullMix.pitchHz != null) {
+          pitch = fullMix.pitchHz;
+          clarity = Math.max(clarity * 0.35, fullMix.confidence);
+          prevMixMidi = freqToMidiFloat(fullMix.pitchHz);
         } else {
-          pitch = leadPitch;
+          const rawFrame = monoRaw.slice(start, start + FRAME_SIZE);
+          const [pitchRaw, clarityRaw] = detector.findPitch(rawFrame, buffer.sampleRate);
+          const leadPitch = promotePitchToLeadRange(pitch, options.minHz, options.maxHz);
+          const rawPitch = promotePitchToLeadRange(pitchRaw, options.minHz, options.maxHz);
+          const leadScore = clarity + Math.min(0.25, Math.max(0, (leadPitch - 180) / 1800));
+          const rawScore = clarityRaw + Math.min(0.25, Math.max(0, (rawPitch - 180) / 1800));
+          if (rawScore > leadScore) {
+            pitch = rawPitch;
+            clarity = clarityRaw;
+          } else {
+            pitch = leadPitch;
+          }
         }
       }
+
+      const inRange = pitch >= options.minHz && pitch <= options.maxHz;
+      const voiced =
+        options.analysisMode === "full_mix"
+          ? rms >= options.rmsThreshold * 0.15 && clarity >= Math.max(0.05, options.clarityThreshold * 0.25) && inRange
+          : rms >= options.rmsThreshold && clarity >= options.clarityThreshold && inRange;
+
+      frames.push({
+        timeSec: start / buffer.sampleRate,
+        durationSec: frameDuration,
+        rms,
+        clarity,
+        pitchHz: pitch,
+        isRest: !voiced,
+        midiFloat: voiced ? freqToMidiFloat(pitch) : undefined
+      });
     }
-
-    const inRange = pitch >= options.minHz && pitch <= options.maxHz;
-    const voiced =
-      options.analysisMode === "full_mix"
-        ? rms >= options.rmsThreshold * 0.15 && clarity >= Math.max(0.05, options.clarityThreshold * 0.25) && inRange
-        : rms >= options.rmsThreshold && clarity >= options.clarityThreshold && inRange;
-
-    frames.push({
-      timeSec: start / buffer.sampleRate,
-      durationSec: frameDuration,
-      rms,
-      clarity,
-      pitchHz: pitch,
-      isRest: !voiced,
-      midiFloat: voiced ? freqToMidiFloat(pitch) : undefined
-    });
   }
 
   const initialVoicedRatio = activeRatio(frames);
@@ -886,6 +943,17 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, options: AnalysisO
     segments: cleaned,
     suggestedKey: detected.key,
     suggestedScale: detected.scale,
-    warning
+    warning,
+    debug: {
+      backend: predominant?.backend ?? "pitchy",
+      bpm: predominant?.bpm,
+      bpmConfidence: predominant?.bpmConfidence,
+      keyStrength: predominant?.keyStrength,
+      voicedPercent: Number((voicedRatio * 100).toFixed(1)),
+      restRatio: Number((1 - voicedRatio).toFixed(3)),
+      midiMin: getNonRestMidis(cleaned).length ? Math.min(...getNonRestMidis(cleaned)) : undefined,
+      midiMedian: getNonRestMidis(cleaned).length ? Math.round(median(getNonRestMidis(cleaned))) : undefined,
+      midiMax: getNonRestMidis(cleaned).length ? Math.max(...getNonRestMidis(cleaned)) : undefined
+    }
   };
 }

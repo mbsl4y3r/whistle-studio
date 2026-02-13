@@ -1,11 +1,32 @@
 import "./styles.css";
 import { analyzeAudioBuffer, suggestAnalysisSettings } from "./audio/analyzer";
+import { analyzeWithEssentia } from "./audio/essentia-client";
 import { AudioRecorder } from "./audio/recorder";
-import { renderMelodyToWavBlob, WhistleSynth } from "./audio/synth";
+import { renderArrangementToWavBlob, renderMelodyToWavBlob, WhistleSynth } from "./audio/synth";
+import { buildArrangement } from "./arranger";
 import { AppDB } from "./db";
-import { exportMelodyJs, exportMelodyJson, exportMelodyMidi } from "./exporters";
+import {
+  exportArrangementJs,
+  exportArrangementJson,
+  exportArrangementMidi,
+  exportMelodyJs,
+  exportMelodyJson,
+  exportMelodyMidi,
+  exportWavBlob
+} from "./exporters";
 import { KEYS, uid } from "./music";
-import { AnalysisMode, FileRecord, FolderRecord, GridType, KeyMode, MelodyStep, ProjectRecord, ScaleType } from "./types";
+import {
+  AnalysisMode,
+  FileRecord,
+  FolderRecord,
+  GridType,
+  KeyMode,
+  MelodyStep,
+  OutputStyle,
+  ProjectRecord,
+  RetroStyle,
+  ScaleType
+} from "./types";
 
 const db = new AppDB();
 const recorder = new AudioRecorder();
@@ -46,6 +67,7 @@ const themeToggleBtn = document.querySelector<HTMLButtonElement>("#theme-toggle-
 const unlockAudioBtn = document.querySelector<HTMLButtonElement>("#unlock-audio-btn")!;
 const saveBtn = document.querySelector<HTMLButtonElement>("#save-btn")!;
 const exportAllBtn = document.querySelector<HTMLButtonElement>("#export-all-btn")!;
+const exportWavBtn = document.querySelector<HTMLButtonElement>("#export-wav-btn")!;
 const copyJsonBtn = document.querySelector<HTMLButtonElement>("#copy-json-btn")!;
 const copySegmentsBtn = document.querySelector<HTMLButtonElement>("#copy-segments-btn")!;
 const copyDebugBtn = document.querySelector<HTMLButtonElement>("#copy-debug-btn")!;
@@ -53,6 +75,8 @@ const copyDebugBtn = document.querySelector<HTMLButtonElement>("#copy-debug-btn"
 const bpmInput = document.querySelector<HTMLInputElement>("#bpm-input")!;
 const gridSelect = document.querySelector<HTMLSelectElement>("#grid-select")!;
 const analysisModeSelect = document.querySelector<HTMLSelectElement>("#analysis-mode-select")!;
+const outputStyleSelect = document.querySelector<HTMLSelectElement>("#output-style-select")!;
+const retroStyleSelect = document.querySelector<HTMLSelectElement>("#retro-style-select")!;
 const tripletToggle = document.querySelector<HTMLInputElement>("#triplet-toggle")!;
 const rmsInput = document.querySelector<HTMLInputElement>("#rms-input")!;
 const clarityInput = document.querySelector<HTMLInputElement>("#clarity-input")!;
@@ -239,7 +263,10 @@ async function refreshSynthPreviewAudio(project?: ProjectRecord): Promise<void> 
 
   try {
     const tone = (synthToneSelect.value as SynthTone) || "nes";
-    const blob = await renderMelodyToWavBlob(project.melody, project.bpm, tone);
+    const arrangement = (project.outputStyle ?? "auto_arrange") === "auto_arrange" ? project.arrangement : undefined;
+    const blob = arrangement
+      ? await renderArrangementToWavBlob(arrangement)
+      : await renderMelodyToWavBlob(project.melody, project.bpm, tone);
     if (token !== synthRenderToken) return;
     const nextUrl = URL.createObjectURL(blob);
     if (synthRenderedUrl) URL.revokeObjectURL(synthRenderedUrl);
@@ -282,6 +309,28 @@ function stopSynthPlayback(project?: ProjectRecord): void {
 
 async function playSynthFromCurrentPosition(project: ProjectRecord): Promise<void> {
   if (!project.melody.length) return;
+  if (project.arrangement && (project.outputStyle ?? "auto_arrange") === "auto_arrange" && synthCurrentBeat <= 0) {
+    await synth.unlock();
+    synth.playArrangement(project.arrangement);
+    synthIsPlaying = true;
+    synthPlayStartBeat = 0;
+    synthPlayStartAtMs = Date.now();
+    synthPlayTempoBpm = project.bpm * synthSpeed;
+    clearSynthTicker();
+    const total = totalBeats(project.melody);
+    synthTicker = window.setInterval(() => {
+      if (!synthIsPlaying) return;
+      const elapsedBeat = ((Date.now() - synthPlayStartAtMs) / 1000) * (synthPlayTempoBpm / 60);
+      synthCurrentBeat = Math.min(total, elapsedBeat);
+      updateSynthUi(project);
+      if (synthCurrentBeat >= total) {
+        synthIsPlaying = false;
+        clearSynthTicker();
+      }
+    }, 100);
+    return;
+  }
+
   const beatsTotal = totalBeats(project.melody);
   if (synthCurrentBeat >= beatsTotal) synthCurrentBeat = 0;
 
@@ -371,11 +420,13 @@ function ensureDefaultProject(folderId: string | null): ProjectRecord {
     bpm: 120,
     grid: "eighth",
     analysisMode: "monophonic",
+    outputStyle: "auto_arrange",
+    retroStyle: "snes_lite",
     triplets: false,
     keyMode: "auto",
     key: "C",
     scale: "major",
-    snapEnabled: true,
+    snapEnabled: false,
     snapToleranceCents: 50,
     minNoteMs: 80,
     rmsThreshold: 0.02,
@@ -383,6 +434,8 @@ function ensureDefaultProject(folderId: string | null): ProjectRecord {
     minHz: 200,
     maxHz: 2500,
     melody: [],
+    arrangement: undefined,
+    analysisDebug: undefined,
     segments: [],
     exportBaseName: "New Melody"
   };
@@ -443,6 +496,8 @@ function updateEditorFromProject(project?: ProjectRecord): void {
   bpmInput.value = String(project.bpm);
   gridSelect.value = project.grid;
   analysisModeSelect.value = project.analysisMode ?? "monophonic";
+  outputStyleSelect.value = project.outputStyle ?? "auto_arrange";
+  retroStyleSelect.value = project.retroStyle ?? "snes_lite";
   tripletToggle.checked = project.triplets;
   rmsInput.value = String(project.rmsThreshold);
   clarityInput.value = String(project.clarityThreshold);
@@ -511,6 +566,8 @@ function hydrateSettings(project: ProjectRecord): void {
   project.bpm = Number(bpmInput.value);
   project.grid = gridSelect.value as GridType;
   project.analysisMode = analysisModeSelect.value as AnalysisMode;
+  project.outputStyle = outputStyleSelect.value as OutputStyle;
+  project.retroStyle = retroStyleSelect.value as RetroStyle;
   project.triplets = tripletToggle.checked;
   project.rmsThreshold = Number(rmsInput.value);
   project.clarityThreshold = Number(clarityInput.value);
@@ -661,10 +718,40 @@ async function runAnalysis(): Promise<void> {
   }
 
   hydrateSettings(project);
-  setStatus("Analyzing audio...");
+  setStatus(project.analysisMode === "full_mix" ? "Loading analysis engine..." : "Analyzing audio...");
 
   try {
     const buffer = await decodeBlobToAudioBuffer(project.rawAudioBlob);
+    let predominant:
+      | {
+          backend: "essentia-melodia" | "pitchy";
+          hopSeconds: number;
+          pitchHz: number[];
+          pitchConfidence: number[];
+          bpm?: number;
+          bpmConfidence?: number;
+          key?: string;
+          scale?: "major" | "minor";
+          keyStrength?: number;
+        }
+      | undefined;
+    if (project.analysisMode === "full_mix") {
+      setStatus("Analyzing...");
+      const mono = new Float32Array(buffer.length);
+      for (let i = 0; i < buffer.length; i += 1) {
+        let sum = 0;
+        for (let c = 0; c < buffer.numberOfChannels; c += 1) sum += buffer.getChannelData(c)[i];
+        mono[i] = sum / buffer.numberOfChannels;
+      }
+      const melodia = await analyzeWithEssentia(
+        mono,
+        buffer.sampleRate,
+        project.minHz,
+        project.maxHz
+      );
+      predominant = melodia;
+    }
+
     const result = await analyzeAudioBuffer(buffer, {
       bpm: project.bpm,
       grid: project.grid,
@@ -680,15 +767,28 @@ async function runAnalysis(): Promise<void> {
       snapToleranceCents: project.snapToleranceCents,
       minHz: project.minHz,
       maxHz: project.maxHz
-    });
+    }, predominant);
 
     project.melody = result.melody;
     project.segments = result.segments;
+    project.analysisDebug = result.debug;
     if (project.keyMode === "auto") {
       project.key = result.suggestedKey;
       project.scale = result.suggestedScale;
       keySelect.value = project.key;
       scaleSelect.value = project.scale;
+    }
+    if ((project.outputStyle ?? "auto_arrange") === "auto_arrange") {
+      project.arrangement = buildArrangement({
+        melody: project.melody,
+        bpm: project.bpm,
+        key: project.key,
+        scale: project.scale,
+        outputStyle: project.outputStyle,
+        retroStyle: project.retroStyle
+      });
+    } else {
+      project.arrangement = undefined;
     }
 
     suggestedKeyText.textContent = `Suggested key: ${result.suggestedKey} ${result.suggestedScale}`;
@@ -848,17 +948,21 @@ function wireEvents(): void {
     project.bpm = 120;
     project.grid = "eighth";
     project.analysisMode = "monophonic";
+    project.outputStyle = "auto_arrange";
+    project.retroStyle = "snes_lite";
     project.triplets = false;
     project.keyMode = "auto";
     project.key = "C";
     project.scale = "major";
-    project.snapEnabled = true;
+    project.snapEnabled = false;
     project.snapToleranceCents = 50;
     project.minNoteMs = 80;
     project.rmsThreshold = 0.02;
     project.clarityThreshold = 0.75;
     project.minHz = 200;
     project.maxHz = 2500;
+    project.arrangement = undefined;
+    project.analysisDebug = undefined;
 
     updateEditorFromProject(project);
     dirty = true;
@@ -880,6 +984,28 @@ function wireEvents(): void {
     setStatus("Auto-detecting analysis settings...");
     try {
       const buffer = await decodeBlobToAudioBuffer(project.rawAudioBlob);
+      let predominant:
+        | {
+            backend: "essentia-melodia" | "pitchy";
+            hopSeconds: number;
+            pitchHz: number[];
+            pitchConfidence: number[];
+            bpm?: number;
+            bpmConfidence?: number;
+            key?: string;
+            scale?: "major" | "minor";
+            keyStrength?: number;
+          }
+        | undefined;
+      if (project.analysisMode === "full_mix") {
+        const mono = new Float32Array(buffer.length);
+        for (let i = 0; i < buffer.length; i += 1) {
+          let sum = 0;
+          for (let c = 0; c < buffer.numberOfChannels; c += 1) sum += buffer.getChannelData(c)[i];
+          mono[i] = sum / buffer.numberOfChannels;
+        }
+        predominant = await analyzeWithEssentia(mono, buffer.sampleRate, project.minHz, project.maxHz);
+      }
       const suggestion = await suggestAnalysisSettings(buffer, {
         bpm: project.bpm,
         grid: project.grid,
@@ -895,7 +1021,7 @@ function wireEvents(): void {
         snapToleranceCents: project.snapToleranceCents,
         minHz: project.minHz,
         maxHz: project.maxHz
-      });
+      }, predominant);
 
       project.bpm = suggestion.bpm;
       project.grid = suggestion.grid;
@@ -906,6 +1032,9 @@ function wireEvents(): void {
       project.minHz = suggestion.minHz;
       project.maxHz = suggestion.maxHz;
       project.minNoteMs = suggestion.minNoteMs;
+      if (predominant?.bpm && Number.isFinite(predominant.bpm)) {
+        project.bpm = suggestion.bpm;
+      }
       updateEditorFromProject(project);
       dirty = true;
       await saveCurrentProject();
@@ -1003,6 +1132,8 @@ function wireEvents(): void {
       bpm: project.bpm,
       grid: project.grid,
       analysisMode: project.analysisMode,
+      outputStyle: project.outputStyle ?? "auto_arrange",
+      retroStyle: project.retroStyle ?? "snes_lite",
       triplets: project.triplets,
       rmsThreshold: project.rmsThreshold,
       clarityThreshold: project.clarityThreshold,
@@ -1045,6 +1176,8 @@ function wireEvents(): void {
       bpm: project.bpm,
       grid: project.grid,
       analysisMode: project.analysisMode,
+      outputStyle: project.outputStyle ?? "auto_arrange",
+      retroStyle: project.retroStyle ?? "snes_lite",
       triplets: project.triplets,
       rmsThreshold: project.rmsThreshold,
       clarityThreshold: project.clarityThreshold,
@@ -1065,6 +1198,9 @@ function wireEvents(): void {
     const debugText = [
       "Settings:",
       JSON.stringify(settingsPayload, null, 2),
+      "",
+      "Analysis Debug:",
+      JSON.stringify(project.analysisDebug ?? {}, null, 2),
       "",
       "Segments:",
       segmentsViewEl.value || "No segments yet.",
@@ -1087,7 +1223,40 @@ function wireEvents(): void {
     }
   };
 
-  exportAllBtn.onclick = () => {
+  exportWavBtn.onclick = async () => {
+    const project = getCurrentProject();
+    if (!project || !project.melody.length) {
+      setStatus("No melody to export.");
+      return;
+    }
+    const baseName = resolveExportBaseName(project);
+    const arrangement =
+      (project.outputStyle ?? "auto_arrange") === "auto_arrange"
+        ? project.arrangement ??
+          buildArrangement({
+            melody: project.melody,
+            bpm: project.bpm,
+            key: project.key,
+            scale: project.scale,
+            outputStyle: project.outputStyle,
+            retroStyle: project.retroStyle
+          })
+        : buildArrangement({
+            melody: project.melody,
+            bpm: project.bpm,
+            key: project.key,
+            scale: project.scale,
+            outputStyle: "lead_only",
+            retroStyle: project.retroStyle
+          });
+    project.arrangement = arrangement;
+    const wavBlob = await renderArrangementToWavBlob(arrangement);
+    exportWavBlob(baseName, wavBlob, ".arrangement");
+    await saveCurrentProject();
+    setStatus("Exported arrangement WAV");
+  };
+
+  exportAllBtn.onclick = async () => {
     const project = getCurrentProject();
     if (!project || !project.melody.length) {
       setStatus("No melody to export.");
@@ -1099,8 +1268,22 @@ function wireEvents(): void {
     exportMelodyJson(baseName, project.bpm, project.melody);
     exportMelodyJs(baseName, project.melody);
     exportMelodyMidi(baseName, project.melody, project.bpm);
-    void saveCurrentProject();
-    setStatus("Exported JSON, JS, and MIDI");
+    const arrangement = buildArrangement({
+      melody: project.melody,
+      bpm: project.bpm,
+      key: project.key,
+      scale: project.scale,
+      outputStyle: project.outputStyle,
+      retroStyle: project.retroStyle
+    });
+    project.arrangement = arrangement;
+    exportArrangementJson(baseName, arrangement);
+    exportArrangementJs(baseName, arrangement);
+    exportArrangementMidi(baseName, arrangement);
+    const wavBlob = await renderArrangementToWavBlob(arrangement);
+    exportWavBlob(baseName, wavBlob, ".arrangement");
+    await saveCurrentProject();
+    setStatus("Exported melody + arrangement JSON, JS, MIDI, WAV");
   };
 
   toggleTrashBtn.onclick = () => {
@@ -1254,6 +1437,8 @@ function wireEvents(): void {
     bpmInput,
     gridSelect,
     analysisModeSelect,
+    outputStyleSelect,
+    retroStyleSelect,
     tripletToggle,
     rmsInput,
     clarityInput,
@@ -1282,6 +1467,19 @@ function wireEvents(): void {
       }
       hydrateSettings(project);
       project.exportBaseName = exportNameInput.value.trim() || project.name;
+      if (project.melody.length) {
+        project.arrangement =
+          (project.outputStyle ?? "auto_arrange") === "auto_arrange"
+            ? buildArrangement({
+                melody: project.melody,
+                bpm: project.bpm,
+                key: project.key,
+                scale: project.scale,
+                outputStyle: project.outputStyle,
+                retroStyle: project.retroStyle
+              })
+            : undefined;
+      }
       dirty = true;
 
       // BPM should retime current melody playback/render, not re-transcribe audio.
