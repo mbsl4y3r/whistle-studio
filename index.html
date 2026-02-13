@@ -11,10 +11,6 @@
         <h1>Whistle Studio</h1>
         <div class="topbar-actions">
           <button id="theme-toggle-btn" class="icon-btn" aria-label="Toggle theme" title="Toggle theme"></button>
-          <button id="unlock-audio-btn">Unlock Audio</button>
-          <button id="save-btn">Save Project</button>
-          <button id="export-wav-btn">Export WAV</button>
-          <button id="export-all-btn">Export All</button>
           <span id="status-text" class="status">Ready</span>
         </div>
       </header>
@@ -55,16 +51,22 @@
             <div class="help-content">
               <p><strong>Record / Pause / Resume / Stop</strong>: capture a new microphone take.</p>
               <p><strong>Discard Take</strong>: remove current source audio from this project.</p>
-              <p><strong>Analyze</strong>: regenerate Segments and Melody JSON from current audio.</p>
+              <p><strong>Analyze</strong>: regenerate segments and melody from current audio.</p>
               <p><strong>Reset</strong>: clears generated segments and melody output.</p>
-              <p><strong>Auto Settings</strong>: estimates RMS, clarity, pitch range, and min note length.</p>
-              <p><strong>Analysis Mode</strong>: Monophonic for whistle/single voice, Full Mix Assist for dense songs.</p>
-              <p><strong>Output</strong>: Lead only exports single melody, Auto Arrange builds SNES-lite backing tracks.</p>
-              <p><strong>Style</strong>: SNES-lite is richer by default, NES is simpler and more chiptune-limited.</p>
-              <p><strong>RMS threshold</strong>: loudness cutoff for note vs rest detection.</p>
-              <p><strong>Clarity threshold</strong>: pitch confidence cutoff for valid note frames.</p>
-              <p><strong>Triplets</strong>: quantizes timing to three evenly spaced notes per beat, useful for shuffle or swing-like rhythm feel.</p>
-              <p><strong>Snap to key</strong>: pulls notes to the selected key within tolerance cents.</p>
+              <p><strong>Output</strong>: Auto Arrange builds a full retro arrangement, Lead only keeps the melody line.</p>
+              <p><strong>Style</strong>: SNES-lite is richer and default, NES is simpler and more classic 8-bit.</p>
+              <p><strong>Auto Detect Settings</strong>: picks settings for you and is recommended for most songs.</p>
+              <p><strong>Override BPM and Key</strong>: lets you manually change just BPM and key in Basic settings.</p>
+              <p><strong>Advanced</strong>: technical controls for detailed tuning, collapsed by default.</p>
+              <p><strong>Override Auto Settings</strong>: enables manual tuning of technical fields.</p>
+              <p><strong>Rhythm grid</strong>: note timing resolution used during quantization.</p>
+              <p><strong>Allow triplets</strong>: allows 3-notes-per-beat timing.</p>
+              <p><strong>Silence sensitivity</strong>: higher values mark more quiet audio as rests.</p>
+              <p><strong>Pitch confidence</strong>: higher values require cleaner pitch tracking.</p>
+              <p><strong>Minimum note length</strong>: merges tiny fragments into nearby notes/rests.</p>
+              <p><strong>Pitch range</strong>: limits detected notes to a frequency band.</p>
+              <p><strong>Force notes into key</strong>: nudges notes toward key tones.</p>
+              <p><strong>Snap tolerance</strong>: maximum cents offset allowed for snapping.</p>
               <p><strong>Export file name</strong>: base name used for JSON, JS, and MIDI exports.</p>
               <p><strong>Synth Tone</strong>: playback style, it does not change exported notes.</p>
               <div class="help-debug-row">
@@ -162,66 +164,93 @@
               <button id="reset-settings-btn">Reset Defaults</button>
             </div>
           </div>
-          <p class="help-text">Unlock Audio enables browser playback after user interaction.</p>
-          <label>BPM <input id="bpm-input" type="number" min="30" max="240" value="120" /></label>
-          <label>Grid
-            <select id="grid-select">
-              <option value="quarter">Quarter</option>
-              <option value="eighth" selected>Eighth</option>
-              <option value="sixteenth">Sixteenth</option>
-            </select>
-          </label>
-          <label>Analysis mode
-            <select id="analysis-mode-select">
-              <option value="monophonic" selected>Monophonic</option>
-              <option value="full_mix">Full Mix Assist</option>
-            </select>
-          </label>
-          <label>Output
-            <select id="output-style-select">
-              <option value="auto_arrange" selected>Auto Arrange</option>
-              <option value="lead_only">Lead only</option>
-            </select>
-          </label>
-          <label>Style
-            <select id="retro-style-select">
-              <option value="snes_lite" selected>SNES-lite</option>
-              <option value="nes">NES</option>
-            </select>
-          </label>
-          <label><input id="triplet-toggle" type="checkbox" /> Triplets</label>
-          <label>RMS threshold <span id="rms-value" class="status"></span><input id="rms-input" type="range" min="0.001" max="0.1" step="0.001" value="0.02" /></label>
-          <p class="help-text">Lower catches quiet notes, higher marks quiet audio as REST.</p>
-          <label>Clarity threshold <span id="clarity-value" class="status"></span><input id="clarity-input" type="range" min="0.1" max="0.99" step="0.01" value="0.75" /></label>
-          <p class="help-text">Higher requires more confident pitch tracking, lower accepts noisier pitch.</p>
-          <label>Min note ms <input id="min-note-ms-input" type="number" min="20" max="500" value="80" /></label>
-          <label>Pitch range Hz
-            <div class="inline-pair">
-              <input id="min-hz-input" type="number" min="50" max="1200" value="200" />
-              <input id="max-hz-input" type="number" min="500" max="5000" value="2500" />
+          <section class="basic-settings">
+            <label>Output
+              <select id="output-style-select">
+                <option value="auto_arrange" selected>Auto Arrange</option>
+                <option value="lead_only">Lead only</option>
+              </select>
+            </label>
+            <label>Style
+              <select id="retro-style-select">
+                <option value="snes_lite" selected>SNES-lite</option>
+                <option value="nes">NES</option>
+              </select>
+            </label>
+            <p id="auto-summary-text" class="status">Auto detected: waiting for analysis</p>
+            <label><input id="override-bpm-key-toggle" type="checkbox" /> Override BPM and Key</label>
+            <div id="bpm-key-readonly-row" class="inline-pair">
+              <label>BPM <input id="bpm-readonly-input" type="text" readonly /></label>
+              <label>Key <input id="key-readonly-input" type="text" readonly /></label>
             </div>
-          </label>
-          <label>Key mode
-            <select id="key-mode-select">
-              <option value="auto" selected>Auto</option>
-              <option value="manual">Manual</option>
-            </select>
-          </label>
-          <label>Key <select id="key-select"></select></label>
-          <label>Scale
-            <select id="scale-select">
-              <option value="major">Major</option>
-              <option value="minor">Minor</option>
-            </select>
-          </label>
-          <label><input id="snap-toggle" type="checkbox" checked /> Snap to key</label>
-          <label>Snap tolerance cents <input id="snap-cents-input" type="number" min="5" max="100" value="50" /></label>
-          <label>Export file name <input id="export-name-input" type="text" placeholder="My Melody" /></label>
-          <p class="help-text">Used as the base for JSON, JS, and MIDI exports.</p>
-          <p id="suggested-key-text" class="status"></p>
-          <div class="toolbar-row">
-            <button id="copy-settings-btn">Copy Settings</button>
-          </div>
+            <div id="bpm-key-edit-row" class="inline-pair hidden">
+              <label>BPM <input id="bpm-input" type="number" min="30" max="240" value="120" /></label>
+              <label>Key <select id="key-select"></select></label>
+            </div>
+            <div class="toolbar-row transport-row">
+              <button id="transport-play-btn">Play</button>
+              <button id="transport-stop-btn">Stop</button>
+              <button id="unlock-audio-btn">Unlock Audio</button>
+            </div>
+            <div class="toolbar-row transport-row">
+              <button id="export-all-btn">Export All</button>
+              <button id="export-wav-btn">Export WAV</button>
+              <button id="save-btn">Save Project</button>
+            </div>
+            <p id="suggested-key-text" class="status"></p>
+          </section>
+
+          <details id="advancedSettings" class="advanced-panel">
+            <summary><span class="help-arrow"></span>Advanced</summary>
+            <div class="advanced-body">
+              <label><input id="override-auto-toggle" type="checkbox" /> Override Auto Settings</label>
+              <p id="auto-settings-note" class="help-text">Auto settings active</p>
+              <label>Analysis mode
+                <select id="analysis-mode-select">
+                  <option value="monophonic" selected>Monophonic</option>
+                  <option value="full_mix">Full Mix Assist</option>
+                </select>
+              </label>
+              <label>Rhythm grid
+                <select id="grid-select">
+                  <option value="quarter">Quarter</option>
+                  <option value="eighth" selected>Eighth</option>
+                  <option value="sixteenth">Sixteenth</option>
+                </select>
+              </label>
+              <label><input id="triplet-toggle" type="checkbox" /> Allow triplets</label>
+              <label>Silence sensitivity <span id="rms-value" class="status"></span><input id="rms-input" type="range" min="0.001" max="0.1" step="0.001" value="0.02" /></label>
+              <label>Pitch confidence <span id="clarity-value" class="status"></span><input id="clarity-input" type="range" min="0.1" max="0.99" step="0.01" value="0.75" /></label>
+              <label>Minimum note length <input id="min-note-ms-input" type="number" min="20" max="500" value="80" /></label>
+              <label>Pitch range
+                <div class="inline-pair">
+                  <input id="min-hz-input" type="number" min="50" max="1200" value="200" />
+                  <input id="max-hz-input" type="number" min="500" max="5000" value="2500" />
+                </div>
+              </label>
+              <label>Key mode
+                <select id="key-mode-select">
+                  <option value="auto" selected>Auto</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </label>
+              <label>Scale
+                <select id="scale-select">
+                  <option value="major">Major</option>
+                  <option value="minor">Minor</option>
+                </select>
+              </label>
+              <label><input id="snap-toggle" type="checkbox" checked /> Force notes into key</label>
+              <label>Snap tolerance <input id="snap-cents-input" type="number" min="5" max="100" value="50" /></label>
+              <label>Export file name <input id="export-name-input" type="text" placeholder="My Melody" /></label>
+              <div class="toolbar-row">
+                <button id="reset-advanced-btn">Reset Advanced to Auto Defaults</button>
+              </div>
+              <div class="toolbar-row">
+                <button id="copy-settings-btn">Copy Settings</button>
+              </div>
+            </div>
+          </details>
         </aside>
       </main>
 

@@ -89,6 +89,8 @@ export interface ProjectRecord {
   analysisMode: AnalysisMode;
   outputStyle?: OutputStyle;
   retroStyle?: RetroStyle;
+  overrideAutoSettings?: boolean;
+  overrideBpmKey?: boolean;
   melody: MelodyStep[];
   arrangement?: Arrangement;
   analysisDebug?: AnalyzeResult["debug"];
