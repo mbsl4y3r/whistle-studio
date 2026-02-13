@@ -1,6 +1,7 @@
 export type ScaleType = "major" | "minor";
 export type KeyMode = "auto" | "manual";
 export type GridType = "quarter" | "eighth" | "sixteenth";
+export type AnalysisMode = "monophonic" | "full_mix";
 
 export interface MelodyStep {
   note: string;
@@ -46,10 +47,21 @@ export interface ProjectRecord {
   clarityThreshold: number;
   minHz: number;
   maxHz: number;
+  analysisMode: AnalysisMode;
   melody: MelodyStep[];
   segments: Segment[];
   rawAudioBlob?: Blob;
   sourceFileName?: string;
+  exportBaseName?: string;
+}
+
+export interface FileRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface AnalysisOptions {
@@ -66,6 +78,7 @@ export interface AnalysisOptions {
   snapToleranceCents: number;
   minHz: number;
   maxHz: number;
+  analysisMode: AnalysisMode;
 }
 
 export interface AnalyzeResult {
