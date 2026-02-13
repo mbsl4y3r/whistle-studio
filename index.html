@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/alligator.png" />
+    <link rel="icon" type="image/png" href="/alligator.png?v=2" />
     <title>Whistle Studio</title>
   </head>
   <body>
@@ -19,34 +19,64 @@
       <main class="layout">
         <aside class="panel left-panel">
           <div class="panel-header">
-            <h2>Library</h2>
+            <h2>AI Music</h2>
+          </div>
+          <label>Prompt
+            <textarea id="ai-prompt-input" class="ai-prompt" placeholder="Example: 30 second SNES-style adventure loop, bright melody, steady drums."></textarea>
+          </label>
+          <label>Style hint
+            <select id="ai-style-select">
+              <option value="snes_lite" selected>SNES-lite</option>
+              <option value="nes">NES</option>
+              <option value="chiptune">Chiptune</option>
+            </select>
+          </label>
+          <label>Duration (seconds)
+            <input id="ai-duration-input" type="number" min="5" max="120" value="30" />
+          </label>
+          <div class="toolbar-row">
+            <button id="ai-generate-btn">Generate 30s Clip</button>
+          </div>
+          <p class="help-text">
+            Requires a local backend endpoint at <code>/api/generate-music</code>. If unavailable, upload audio manually.
+          </p>
+
+          <section class="legacy-library hidden" aria-hidden="true">
             <button id="toggle-trash-btn">Trash</button>
-          </div>
-          <div class="toolbar-row">
-            <button id="new-folder-btn">New Folder</button>
-            <button id="rename-folder-btn">Rename</button>
-            <button id="delete-folder-btn">Delete</button>
-          </div>
-          <ul id="folder-tree" class="list"></ul>
+            <div class="toolbar-row">
+              <button id="new-folder-btn">New Folder</button>
+              <button id="rename-folder-btn">Rename</button>
+              <button id="delete-folder-btn">Delete</button>
+            </div>
+            <ul id="folder-tree" class="list"></ul>
+            <div class="panel-subheader">
+              <h3>Projects</h3>
+            </div>
+            <div class="toolbar-row">
+              <button id="new-project-btn">New</button>
+              <button id="rename-project-btn">Rename</button>
+              <button id="move-project-btn">Move</button>
+              <button id="delete-project-btn">Delete</button>
+            </div>
+            <ul id="project-list" class="list"></ul>
+            <div class="panel-subheader">
+              <h3>Files</h3>
+            </div>
+            <div class="toolbar-row">
+              <button id="new-file-btn">New File</button>
+              <button id="rename-file-btn">Rename</button>
+              <button id="delete-file-btn">Delete</button>
+            </div>
+            <ul id="file-list" class="list"></ul>
+            <div id="trash-actions" class="toolbar-row hidden">
+              <button id="restore-btn">Restore</button>
+              <button id="empty-trash-btn" class="danger">Empty Trash</button>
+            </div>
+          </section>
+
           <div class="panel-subheader">
-            <h3>Projects</h3>
+            <h3>Help</h3>
           </div>
-          <div class="toolbar-row">
-            <button id="new-project-btn">New</button>
-            <button id="rename-project-btn">Rename</button>
-            <button id="move-project-btn">Move</button>
-            <button id="delete-project-btn">Delete</button>
-          </div>
-          <ul id="project-list" class="list"></ul>
-          <div class="panel-subheader">
-            <h3>Files</h3>
-          </div>
-          <div class="toolbar-row">
-            <button id="new-file-btn">New File</button>
-            <button id="rename-file-btn">Rename</button>
-            <button id="delete-file-btn">Delete</button>
-          </div>
-          <ul id="file-list" class="list"></ul>
           <details class="help-panel" open>
             <summary><span class="help-arrow"></span> Help</summary>
             <div class="help-content">
@@ -75,10 +105,6 @@
               </div>
             </div>
           </details>
-          <div id="trash-actions" class="toolbar-row hidden">
-            <button id="restore-btn">Restore</button>
-            <button id="empty-trash-btn" class="danger">Empty Trash</button>
-          </div>
         </aside>
 
         <section class="panel center-panel">

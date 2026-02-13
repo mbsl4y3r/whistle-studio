@@ -127,6 +127,10 @@ const deleteFileBtn = document.querySelector<HTMLButtonElement>("#delete-file-bt
 const fileEditorEl = document.querySelector<HTMLTextAreaElement>("#file-editor")!;
 const restoreBtn = document.querySelector<HTMLButtonElement>("#restore-btn")!;
 const emptyTrashBtn = document.querySelector<HTMLButtonElement>("#empty-trash-btn")!;
+const aiPromptInput = document.querySelector<HTMLTextAreaElement>("#ai-prompt-input")!;
+const aiStyleSelect = document.querySelector<HTMLSelectElement>("#ai-style-select")!;
+const aiDurationInput = document.querySelector<HTMLInputElement>("#ai-duration-input")!;
+const aiGenerateBtn = document.querySelector<HTMLButtonElement>("#ai-generate-btn")!;
 
 let folders: FolderRecord[] = [];
 let projects: ProjectRecord[] = [];
@@ -774,6 +778,25 @@ async function decodeBlobToAudioBuffer(blob: Blob): Promise<AudioBuffer> {
   }
 }
 
+async function fetchGeneratedAudioBlob(payload: {
+  audioUrl?: string;
+  audioBase64?: string;
+  mimeType?: string;
+}): Promise<Blob> {
+  if (payload.audioBase64) {
+    const clean = payload.audioBase64.includes(",") ? payload.audioBase64.split(",")[1] : payload.audioBase64;
+    const mime = payload.mimeType || "audio/wav";
+    const dataRes = await fetch(`data:${mime};base64,${clean}`);
+    return await dataRes.blob();
+  }
+  if (payload.audioUrl) {
+    const res = await fetch(payload.audioUrl);
+    if (!res.ok) throw new Error(`Audio fetch failed: ${res.status}`);
+    return await res.blob();
+  }
+  throw new Error("Generator returned no audio payload.");
+}
+
 function attachAudioBlob(blob: Blob): void {
   const project = getCurrentProject();
   if (!project) return;
@@ -806,6 +829,14 @@ async function runAnalysis(): Promise<void> {
 
   hydrateSettings(project);
   setStatus(project.analysisMode === "full_mix" ? "Loading analysis engine..." : "Analyzing audio...");
+  // Invalidate old synth preview immediately so users cannot replay stale audio.
+  synthRenderToken += 1;
+  if (synthRenderedUrl) {
+    URL.revokeObjectURL(synthRenderedUrl);
+    synthRenderedUrl = null;
+  }
+  synthAudioPreviewEl.removeAttribute("src");
+  synthAudioPreviewEl.load();
 
   try {
     const buffer = await decodeBlobToAudioBuffer(project.rawAudioBlob);
@@ -914,6 +945,8 @@ async function runAnalysis(): Promise<void> {
     dirty = true;
     updateEditorFromProject(project);
     stopSynthPlayback(project);
+    setStatus("Rendering synth preview...");
+    await refreshSynthPreviewAudio(project);
     await saveCurrentProject();
     setStatus(`Analyzed ${project.name}`);
   } catch (error) {
@@ -931,6 +964,50 @@ function wireEvents(): void {
   unlockAudioBtn.onclick = async () => {
     await synth.unlock();
     setStatus("Audio unlocked");
+  };
+
+  aiGenerateBtn.onclick = async () => {
+    const project = getCurrentProject();
+    if (!project) {
+      setStatus("Select or create a project first.");
+      return;
+    }
+    const prompt = aiPromptInput.value.trim();
+    if (!prompt) {
+      setStatus("Enter a prompt first.");
+      return;
+    }
+
+    const durationSec = Math.max(5, Math.min(120, Number(aiDurationInput.value) || 30));
+    aiGenerateBtn.disabled = true;
+    setStatus("Generating audio from prompt...");
+    try {
+      const res = await fetch("/api/generate-music", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          durationSec,
+          style: aiStyleSelect.value
+        })
+      });
+      if (!res.ok) {
+        throw new Error(`Generator endpoint failed (${res.status}).`);
+      }
+      const payload = (await res.json()) as { audioUrl?: string; audioBase64?: string; mimeType?: string };
+      const blob = await fetchGeneratedAudioBlob(payload);
+      await decodeBlobToAudioBuffer(blob);
+      attachAudioBlob(blob);
+      project.sourceFileName = `generated-${Date.now()}.wav`;
+      await saveCurrentProject();
+      setStatus("Generated audio loaded, analyzing...");
+      await runAnalysis();
+    } catch (error) {
+      console.error(error);
+      setStatus("AI generation unavailable. Use upload or run a local /api/generate-music backend.");
+    } finally {
+      aiGenerateBtn.disabled = false;
+    }
   };
 
   overrideAutoToggle.onchange = async () => {
