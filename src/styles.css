@@ -109,6 +109,36 @@ body {
   text-align: center;
 }
 
+.basic-settings {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.55rem;
+  margin-bottom: 0.65rem;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+}
+
+.advanced-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--bg));
+}
+
+.advanced-body {
+  border-top: 1px solid var(--line);
+  padding: 0.5rem 0.55rem;
+  max-height: 52vh;
+  overflow: auto;
+}
+
+.transport-row button {
+  flex: 1;
+}
+
+#bpm-readonly-input,
+#key-readonly-input {
+  background: color-mix(in srgb, var(--panel) 86%, var(--line));
+}
+
 h2,
 h3 {
   margin: 0.25rem 0 0.5rem;
@@ -170,6 +200,20 @@ h3 {
   display: none;
 }
 
+.advanced-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  padding: 0.45rem 0.2rem;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .help-arrow {
   width: 0.75rem;
   height: 0.75rem;
@@ -189,6 +233,10 @@ h3 {
 }
 
 .help-panel[open] .help-arrow::before {
+  transform: rotate(45deg);
+}
+
+.advanced-panel[open] .help-arrow::before {
   transform: rotate(45deg);
 }
 

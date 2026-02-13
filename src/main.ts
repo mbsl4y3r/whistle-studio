@@ -68,15 +68,25 @@ const unlockAudioBtn = document.querySelector<HTMLButtonElement>("#unlock-audio-
 const saveBtn = document.querySelector<HTMLButtonElement>("#save-btn")!;
 const exportAllBtn = document.querySelector<HTMLButtonElement>("#export-all-btn")!;
 const exportWavBtn = document.querySelector<HTMLButtonElement>("#export-wav-btn")!;
+const transportPlayBtn = document.querySelector<HTMLButtonElement>("#transport-play-btn")!;
+const transportStopBtn = document.querySelector<HTMLButtonElement>("#transport-stop-btn")!;
 const copyJsonBtn = document.querySelector<HTMLButtonElement>("#copy-json-btn")!;
 const copySegmentsBtn = document.querySelector<HTMLButtonElement>("#copy-segments-btn")!;
 const copyDebugBtn = document.querySelector<HTMLButtonElement>("#copy-debug-btn")!;
 
 const bpmInput = document.querySelector<HTMLInputElement>("#bpm-input")!;
+const bpmReadonlyInput = document.querySelector<HTMLInputElement>("#bpm-readonly-input")!;
 const gridSelect = document.querySelector<HTMLSelectElement>("#grid-select")!;
 const analysisModeSelect = document.querySelector<HTMLSelectElement>("#analysis-mode-select")!;
 const outputStyleSelect = document.querySelector<HTMLSelectElement>("#output-style-select")!;
 const retroStyleSelect = document.querySelector<HTMLSelectElement>("#retro-style-select")!;
+const autoSummaryText = document.querySelector<HTMLElement>("#auto-summary-text")!;
+const advancedSettings = document.querySelector<HTMLDetailsElement>("#advancedSettings")!;
+const overrideAutoToggle = document.querySelector<HTMLInputElement>("#override-auto-toggle")!;
+const overrideBpmKeyToggle = document.querySelector<HTMLInputElement>("#override-bpm-key-toggle")!;
+const autoSettingsNote = document.querySelector<HTMLElement>("#auto-settings-note")!;
+const bpmKeyReadonlyRow = document.querySelector<HTMLElement>("#bpm-key-readonly-row")!;
+const bpmKeyEditRow = document.querySelector<HTMLElement>("#bpm-key-edit-row")!;
 const tripletToggle = document.querySelector<HTMLInputElement>("#triplet-toggle")!;
 const rmsInput = document.querySelector<HTMLInputElement>("#rms-input")!;
 const clarityInput = document.querySelector<HTMLInputElement>("#clarity-input")!;
@@ -87,6 +97,7 @@ const minHzInput = document.querySelector<HTMLInputElement>("#min-hz-input")!;
 const maxHzInput = document.querySelector<HTMLInputElement>("#max-hz-input")!;
 const keyModeSelect = document.querySelector<HTMLSelectElement>("#key-mode-select")!;
 const keySelect = document.querySelector<HTMLSelectElement>("#key-select")!;
+const keyReadonlyInput = document.querySelector<HTMLInputElement>("#key-readonly-input")!;
 const scaleSelect = document.querySelector<HTMLSelectElement>("#scale-select")!;
 const snapToggle = document.querySelector<HTMLInputElement>("#snap-toggle")!;
 const snapCentsInput = document.querySelector<HTMLInputElement>("#snap-cents-input")!;
@@ -94,6 +105,7 @@ const exportNameInput = document.querySelector<HTMLInputElement>("#export-name-i
 const copySettingsBtn = document.querySelector<HTMLButtonElement>("#copy-settings-btn")!;
 const autoSettingsBtn = document.querySelector<HTMLButtonElement>("#auto-settings-btn")!;
 const resetSettingsBtn = document.querySelector<HTMLButtonElement>("#reset-settings-btn")!;
+const resetAdvancedBtn = document.querySelector<HTMLButtonElement>("#reset-advanced-btn")!;
 
 const toggleTrashBtn = document.querySelector<HTMLButtonElement>("#toggle-trash-btn")!;
 const newFolderBtn = document.querySelector<HTMLButtonElement>("#new-folder-btn")!;
@@ -146,6 +158,15 @@ const TONE_GAIN_COMP: Record<SynthTone, number> = {
 let synthUserVolume = 1;
 let synthRenderedUrl: string | null = null;
 let synthRenderToken = 0;
+const ADVANCED_OPEN_STORAGE_KEY = "ws-advanced-open";
+
+function advancedOverrideEnabled(project?: ProjectRecord): boolean {
+  return !!project?.overrideAutoSettings;
+}
+
+function bpmKeyOverrideEnabled(project?: ProjectRecord): boolean {
+  return !!project?.overrideBpmKey;
+}
 
 if (synthToneSelect.value !== "nes") {
   synthToneSelect.value = "nes";
@@ -160,6 +181,51 @@ for (const key of KEYS) {
 
 function setStatus(msg: string): void {
   statusText.textContent = msg;
+}
+
+function updateBasicSummary(project?: ProjectRecord): void {
+  if (!project) {
+    autoSummaryText.textContent = "Auto detected: waiting for analysis";
+    bpmReadonlyInput.value = "-";
+    keyReadonlyInput.value = "-";
+    return;
+  }
+  const tracks = project.arrangement?.tracks.length ?? (project.outputStyle === "lead_only" ? 1 : 4);
+  autoSummaryText.textContent = advancedOverrideEnabled(project)
+    ? "Manual overrides enabled"
+    : `Auto detected: ${project.analysisMode}, ${project.bpm} BPM, ${project.key} ${project.scale}, ${tracks || 1} tracks`;
+  bpmReadonlyInput.value = String(project.bpm);
+  keyReadonlyInput.value = `${project.key} ${project.scale}`;
+}
+
+function updateAdvancedUi(project?: ProjectRecord): void {
+  const overrideAuto = advancedOverrideEnabled(project);
+  const overrideBpmKey = bpmKeyOverrideEnabled(project);
+  overrideAutoToggle.checked = overrideAuto;
+  overrideBpmKeyToggle.checked = overrideBpmKey;
+  bpmKeyReadonlyRow.classList.toggle("hidden", overrideBpmKey);
+  bpmKeyEditRow.classList.toggle("hidden", !overrideBpmKey);
+
+  const controlledInputs: Array<HTMLInputElement | HTMLSelectElement | HTMLButtonElement> = [
+    analysisModeSelect,
+    gridSelect,
+    tripletToggle,
+    rmsInput,
+    clarityInput,
+    minNoteMsInput,
+    minHzInput,
+    maxHzInput,
+    keyModeSelect,
+    scaleSelect,
+    snapToggle,
+    snapCentsInput,
+    exportNameInput,
+    copySettingsBtn
+  ];
+  for (const el of controlledInputs) {
+    el.disabled = !overrideAuto;
+  }
+  autoSettingsNote.textContent = overrideAuto ? "Manual overrides can reduce accuracy" : "Auto settings active";
 }
 
 function updateThresholdReadouts(): void {
@@ -422,6 +488,8 @@ function ensureDefaultProject(folderId: string | null): ProjectRecord {
     analysisMode: "monophonic",
     outputStyle: "auto_arrange",
     retroStyle: "snes_lite",
+    overrideAutoSettings: false,
+    overrideBpmKey: false,
     triplets: false,
     keyMode: "auto",
     key: "C",
@@ -488,6 +556,8 @@ function updateEditorFromProject(project?: ProjectRecord): void {
     fileEditorEl.value = "";
     fileEditorEl.disabled = true;
     synthCurrentBeat = 0;
+    updateBasicSummary(undefined);
+    updateAdvancedUi(undefined);
     updateSynthUi(undefined);
     void refreshSynthPreviewAudio(undefined);
     return;
@@ -511,11 +581,13 @@ function updateEditorFromProject(project?: ProjectRecord): void {
   snapToggle.checked = project.snapEnabled;
   snapCentsInput.value = String(project.snapToleranceCents);
   exportNameInput.value = project.exportBaseName ?? project.name;
-  exportNameInput.disabled = false;
+  exportNameInput.disabled = !advancedOverrideEnabled(project);
 
   jsonPreviewEl.textContent = JSON.stringify(project.melody, null, 2);
   segmentsViewEl.value = renderSegments(project);
   fileEditorEl.disabled = false;
+  updateBasicSummary(project);
+  updateAdvancedUi(project);
   updateSynthUi(project);
   void refreshSynthPreviewAudio(project);
 }
@@ -563,22 +635,28 @@ async function loadFilesForCurrentProject(): Promise<void> {
 }
 
 function hydrateSettings(project: ProjectRecord): void {
-  project.bpm = Number(bpmInput.value);
-  project.grid = gridSelect.value as GridType;
-  project.analysisMode = analysisModeSelect.value as AnalysisMode;
+  project.overrideAutoSettings = overrideAutoToggle.checked;
+  project.overrideBpmKey = overrideBpmKeyToggle.checked;
   project.outputStyle = outputStyleSelect.value as OutputStyle;
   project.retroStyle = retroStyleSelect.value as RetroStyle;
-  project.triplets = tripletToggle.checked;
-  project.rmsThreshold = Number(rmsInput.value);
-  project.clarityThreshold = Number(clarityInput.value);
-  project.minNoteMs = Number(minNoteMsInput.value);
-  project.minHz = Number(minHzInput.value);
-  project.maxHz = Number(maxHzInput.value);
-  project.keyMode = keyModeSelect.value as KeyMode;
-  project.key = keySelect.value;
-  project.scale = scaleSelect.value as ScaleType;
-  project.snapEnabled = snapToggle.checked;
-  project.snapToleranceCents = Number(snapCentsInput.value);
+  if (project.overrideBpmKey) {
+    project.bpm = Number(bpmInput.value);
+    project.key = keySelect.value;
+  }
+  if (project.overrideAutoSettings) {
+    project.grid = gridSelect.value as GridType;
+    project.analysisMode = analysisModeSelect.value as AnalysisMode;
+    project.triplets = tripletToggle.checked;
+    project.rmsThreshold = Number(rmsInput.value);
+    project.clarityThreshold = Number(clarityInput.value);
+    project.minNoteMs = Number(minNoteMsInput.value);
+    project.minHz = Number(minHzInput.value);
+    project.maxHz = Number(maxHzInput.value);
+    project.keyMode = keyModeSelect.value as KeyMode;
+    project.scale = scaleSelect.value as ScaleType;
+    project.snapEnabled = snapToggle.checked;
+    project.snapToleranceCents = Number(snapCentsInput.value);
+  }
 }
 
 function makeFolderNameList(): string {
@@ -722,6 +800,22 @@ async function runAnalysis(): Promise<void> {
 
   try {
     const buffer = await decodeBlobToAudioBuffer(project.rawAudioBlob);
+    const baseOptions = {
+      bpm: project.bpm,
+      grid: project.grid,
+      triplets: project.triplets,
+      analysisMode: project.analysisMode,
+      rmsThreshold: project.rmsThreshold,
+      clarityThreshold: project.clarityThreshold,
+      minNoteMs: project.minNoteMs,
+      keyMode: project.keyMode,
+      key: project.key,
+      scale: project.scale,
+      snapEnabled: project.snapEnabled,
+      snapToleranceCents: project.snapToleranceCents,
+      minHz: project.minHz,
+      maxHz: project.maxHz
+    };
     let predominant:
       | {
           backend: "essentia-melodia" | "pitchy";
@@ -735,7 +829,7 @@ async function runAnalysis(): Promise<void> {
           keyStrength?: number;
         }
       | undefined;
-    if (project.analysisMode === "full_mix") {
+    if (baseOptions.analysisMode === "full_mix") {
       setStatus("Analyzing...");
       const mono = new Float32Array(buffer.length);
       for (let i = 0; i < buffer.length; i += 1) {
@@ -752,26 +846,42 @@ async function runAnalysis(): Promise<void> {
       predominant = melodia;
     }
 
-    const result = await analyzeAudioBuffer(buffer, {
-      bpm: project.bpm,
-      grid: project.grid,
-      triplets: project.triplets,
-      analysisMode: project.analysisMode,
-      rmsThreshold: project.rmsThreshold,
-      clarityThreshold: project.clarityThreshold,
-      minNoteMs: project.minNoteMs,
-      keyMode: project.keyMode,
-      key: project.key,
-      scale: project.scale,
-      snapEnabled: project.snapEnabled,
-      snapToleranceCents: project.snapToleranceCents,
-      minHz: project.minHz,
-      maxHz: project.maxHz
-    }, predominant);
+    let optionsForAnalysis = { ...baseOptions };
+    if (!advancedOverrideEnabled(project)) {
+      const auto = await suggestAnalysisSettings(buffer, baseOptions, predominant);
+      project.grid = auto.grid;
+      project.triplets = auto.triplets;
+      project.analysisMode = auto.analysisMode;
+      project.rmsThreshold = auto.rmsThreshold;
+      project.clarityThreshold = auto.clarityThreshold;
+      project.minNoteMs = auto.minNoteMs;
+      project.minHz = auto.minHz;
+      project.maxHz = auto.maxHz;
+      if (!bpmKeyOverrideEnabled(project)) {
+        project.bpm = auto.bpm;
+      }
+      optionsForAnalysis = {
+        ...optionsForAnalysis,
+        bpm: project.bpm,
+        grid: auto.grid,
+        triplets: auto.triplets,
+        analysisMode: auto.analysisMode,
+        rmsThreshold: auto.rmsThreshold,
+        clarityThreshold: auto.clarityThreshold,
+        minNoteMs: auto.minNoteMs,
+        minHz: auto.minHz,
+        maxHz: auto.maxHz
+      };
+    }
+
+    const result = await analyzeAudioBuffer(buffer, optionsForAnalysis, predominant);
 
     project.melody = result.melody;
     project.segments = result.segments;
     project.analysisDebug = result.debug;
+    if (!bpmKeyOverrideEnabled(project) && result.debug?.bpm && Number.isFinite(result.debug.bpm)) {
+      project.bpm = Math.round(result.debug.bpm);
+    }
     if (project.keyMode === "auto") {
       project.key = result.suggestedKey;
       project.scale = result.suggestedScale;
@@ -815,6 +925,34 @@ function wireEvents(): void {
     await synth.unlock();
     setStatus("Audio unlocked");
   };
+
+  overrideAutoToggle.onchange = async () => {
+    const project = getCurrentProject();
+    if (!project) return;
+    project.overrideAutoSettings = overrideAutoToggle.checked;
+    updateAdvancedUi(project);
+    updateBasicSummary(project);
+    dirty = true;
+    await saveCurrentProject();
+  };
+
+  overrideBpmKeyToggle.onchange = async () => {
+    const project = getCurrentProject();
+    if (!project) return;
+    project.overrideBpmKey = overrideBpmKeyToggle.checked;
+    if (!project.overrideBpmKey) {
+      bpmInput.value = String(project.bpm);
+      keySelect.value = project.key;
+    }
+    updateAdvancedUi(project);
+    updateBasicSummary(project);
+    dirty = true;
+    await saveCurrentProject();
+  };
+
+  advancedSettings.addEventListener("toggle", () => {
+    localStorage.setItem(ADVANCED_OPEN_STORAGE_KEY, advancedSettings.open ? "1" : "0");
+  });
 
   document.body.addEventListener(
     "click",
@@ -950,6 +1088,8 @@ function wireEvents(): void {
     project.analysisMode = "monophonic";
     project.outputStyle = "auto_arrange";
     project.retroStyle = "snes_lite";
+    project.overrideAutoSettings = false;
+    project.overrideBpmKey = false;
     project.triplets = false;
     project.keyMode = "auto";
     project.key = "C";
@@ -1006,22 +1146,26 @@ function wireEvents(): void {
         }
         predominant = await analyzeWithEssentia(mono, buffer.sampleRate, project.minHz, project.maxHz);
       }
-      const suggestion = await suggestAnalysisSettings(buffer, {
-        bpm: project.bpm,
-        grid: project.grid,
-        triplets: project.triplets,
-        analysisMode: project.analysisMode,
-        rmsThreshold: project.rmsThreshold,
-        clarityThreshold: project.clarityThreshold,
-        minNoteMs: project.minNoteMs,
-        keyMode: project.keyMode,
-        key: project.key,
-        scale: project.scale,
-        snapEnabled: project.snapEnabled,
-        snapToleranceCents: project.snapToleranceCents,
-        minHz: project.minHz,
-        maxHz: project.maxHz
-      }, predominant);
+      const suggestion = await suggestAnalysisSettings(
+        buffer,
+        {
+          bpm: project.bpm,
+          grid: project.grid,
+          triplets: project.triplets,
+          analysisMode: project.analysisMode,
+          rmsThreshold: project.rmsThreshold,
+          clarityThreshold: project.clarityThreshold,
+          minNoteMs: project.minNoteMs,
+          keyMode: project.keyMode,
+          key: project.key,
+          scale: project.scale,
+          snapEnabled: project.snapEnabled,
+          snapToleranceCents: project.snapToleranceCents,
+          minHz: project.minHz,
+          maxHz: project.maxHz
+        },
+        predominant
+      );
 
       project.bpm = suggestion.bpm;
       project.grid = suggestion.grid;
@@ -1032,22 +1176,41 @@ function wireEvents(): void {
       project.minHz = suggestion.minHz;
       project.maxHz = suggestion.maxHz;
       project.minNoteMs = suggestion.minNoteMs;
-      if (predominant?.bpm && Number.isFinite(predominant.bpm)) {
-        project.bpm = suggestion.bpm;
-      }
+      project.overrideAutoSettings = false;
       updateEditorFromProject(project);
       dirty = true;
       await saveCurrentProject();
-      setStatus(
-        `Auto settings applied: ${suggestion.bpm} BPM, ${suggestion.grid}, ${suggestion.analysisMode}, RMS ${suggestion.rmsThreshold}, Clarity ${suggestion.clarityThreshold}`
-      );
+      setStatus(`Auto settings applied: ${suggestion.bpm} BPM, ${suggestion.grid}, ${suggestion.analysisMode}`);
     } catch (error) {
       console.error(error);
       setStatus("Auto settings failed.");
     }
   };
 
-  synthPlayBtn.onclick = async () => {
+  resetAdvancedBtn.onclick = async () => {
+    const project = getCurrentProject();
+    if (!project) return;
+    project.overrideAutoSettings = false;
+    if (project.rawAudioBlob) {
+      autoSettingsBtn.click();
+      return;
+    }
+    project.grid = "eighth";
+    project.triplets = false;
+    project.analysisMode = "monophonic";
+    project.rmsThreshold = 0.02;
+    project.clarityThreshold = 0.75;
+    project.minNoteMs = 80;
+    project.minHz = 200;
+    project.maxHz = 2500;
+    project.snapEnabled = false;
+    project.snapToleranceCents = 50;
+    updateEditorFromProject(project);
+    await saveCurrentProject();
+    setStatus("Advanced settings reset to defaults");
+  };
+
+  const playHandler = async () => {
     const project = getCurrentProject();
     if (!project || !project.melody.length) {
       setStatus("Nothing to play, analyze first.");
@@ -1065,12 +1228,18 @@ function wireEvents(): void {
     await playSynthFromCurrentPosition(project);
     setStatus("Playing melody");
   };
+  synthPlayBtn.onclick = playHandler;
+  transportPlayBtn.onclick = () => {
+    void playHandler();
+  };
 
-  synthStopBtn.onclick = () => {
+  const stopHandler = () => {
     const project = getCurrentProject();
     stopSynthPlayback(project);
     setStatus("Playback stopped");
   };
+  synthStopBtn.onclick = stopHandler;
+  transportStopBtn.onclick = stopHandler;
 
   synthMuteBtn.onclick = () => {
     synthMuted = !synthMuted;
@@ -1134,6 +1303,8 @@ function wireEvents(): void {
       analysisMode: project.analysisMode,
       outputStyle: project.outputStyle ?? "auto_arrange",
       retroStyle: project.retroStyle ?? "snes_lite",
+      overrideAutoSettings: project.overrideAutoSettings ?? false,
+      overrideBpmKey: project.overrideBpmKey ?? false,
       triplets: project.triplets,
       rmsThreshold: project.rmsThreshold,
       clarityThreshold: project.clarityThreshold,
@@ -1178,6 +1349,8 @@ function wireEvents(): void {
       analysisMode: project.analysisMode,
       outputStyle: project.outputStyle ?? "auto_arrange",
       retroStyle: project.retroStyle ?? "snes_lite",
+      overrideAutoSettings: project.overrideAutoSettings ?? false,
+      overrideBpmKey: project.overrideBpmKey ?? false,
       triplets: project.triplets,
       rmsThreshold: project.rmsThreshold,
       clarityThreshold: project.clarityThreshold,
@@ -1458,6 +1631,8 @@ function wireEvents(): void {
       const project = getCurrentProject();
       if (!project) return;
       const isBpmChange = el === bpmInput;
+      const isBasicArrangementChange = el === outputStyleSelect || el === retroStyleSelect;
+      const isBpmKeyEdit = el === keySelect || el === bpmInput;
       const wasPlaying = synthIsPlaying;
       let resumeRatio = 0;
       if (wasPlaying) {
@@ -1482,8 +1657,18 @@ function wireEvents(): void {
       }
       dirty = true;
 
+      if (isBasicArrangementChange) {
+        updateEditorFromProject(project);
+        await saveCurrentProject();
+        if (project.melody.length) {
+          await refreshSynthPreviewAudio(project);
+        }
+        setStatus("Playback style updated");
+        return;
+      }
+
       // BPM should retime current melody playback/render, not re-transcribe audio.
-      if (isBpmChange) {
+      if (isBpmChange || (isBpmKeyEdit && bpmKeyOverrideEnabled(project))) {
         updateEditorFromProject(project);
         await saveCurrentProject();
         await refreshSynthPreviewAudio(project);
@@ -1497,7 +1682,7 @@ function wireEvents(): void {
       }
 
       // Apply analysis-related settings live by re-running analysis when audio exists.
-      if (project.rawAudioBlob) {
+      if (project.rawAudioBlob && advancedOverrideEnabled(project)) {
         await runAnalysis();
         const updated = getCurrentProject();
         if (wasPlaying && updated && updated.melody.length) {
@@ -1595,6 +1780,7 @@ function wireEvents(): void {
 async function boot(): Promise<void> {
   const storedTheme = localStorage.getItem("ws-theme");
   applyTheme(storedTheme === "dark" ? "dark" : "light");
+  advancedSettings.open = localStorage.getItem(ADVANCED_OPEN_STORAGE_KEY) === "1";
   wireEvents();
   synthUserVolume = Number(synthVolumeInput.value);
   applyEffectiveSynthVolume();
