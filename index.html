@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/alligator.png" />
     <title>Whistle Studio</title>
   </head>
   <body>
@@ -10,8 +11,8 @@
       <header class="topbar">
         <h1>Whistle Studio</h1>
         <div class="topbar-actions">
-          <button id="theme-toggle-btn" class="icon-btn" aria-label="Toggle theme" title="Toggle theme"></button>
           <span id="status-text" class="status">Ready</span>
+          <button id="theme-toggle-btn" class="icon-btn" aria-label="Toggle theme" title="Toggle theme"></button>
         </div>
       </header>
 
@@ -55,6 +56,7 @@
               <p><strong>Reset</strong>: clears generated segments and melody output.</p>
               <p><strong>Output</strong>: Auto Arrange builds a full retro arrangement, Lead only keeps the melody line.</p>
               <p><strong>Style</strong>: SNES-lite is richer and default, NES is simpler and more classic 8-bit.</p>
+              <p><strong>Continuity</strong>: Seamless removes awkward pauses, Natural keeps original rests.</p>
               <p><strong>Auto Detect Settings</strong>: picks settings for you and is recommended for most songs.</p>
               <p><strong>Override BPM and Key</strong>: lets you manually change just BPM and key in Basic settings.</p>
               <p><strong>Advanced</strong>: technical controls for detailed tuning, collapsed by default.</p>
@@ -68,7 +70,6 @@
               <p><strong>Force notes into key</strong>: nudges notes toward key tones.</p>
               <p><strong>Snap tolerance</strong>: maximum cents offset allowed for snapping.</p>
               <p><strong>Export file name</strong>: base name used for JSON, JS, and MIDI exports.</p>
-              <p><strong>Synth Tone</strong>: playback style, it does not change exported notes.</p>
               <div class="help-debug-row">
                 <button id="copy-debug-btn">Debug Copy</button>
               </div>
@@ -106,16 +107,6 @@
           <section class="playback-block">
             <div class="playback-title-row">
               <h3>Synth Playback</h3>
-              <label class="tone-header">Tone
-                <select id="synth-tone-select">
-                  <option value="whistle">Whistle</option>
-                  <option value="nes" selected>NES Lead</option>
-                  <option value="gba">GBA Pulse</option>
-                  <option value="organ">Organ Soft</option>
-                  <option value="piano">Piano Pluck</option>
-                  <option value="guitar">Guitar Pluck</option>
-                </select>
-              </label>
             </div>
             <audio id="synth-audio-preview" controls></audio>
             <div class="synth-pill hidden" aria-hidden="true">
@@ -177,6 +168,13 @@
                 <option value="nes">NES</option>
               </select>
             </label>
+            <label>Continuity
+              <select id="continuity-mode-select">
+                <option value="seamless" selected>Seamless</option>
+                <option value="natural">Natural</option>
+              </select>
+            </label>
+            <label id="continuity-intensity-wrap">Seamless intensity <span id="continuity-intensity-value" class="status"></span><input id="continuity-intensity-input" type="range" min="0" max="100" step="1" value="60" /></label>
             <p id="auto-summary-text" class="status">Auto detected: waiting for analysis</p>
             <label><input id="override-bpm-key-toggle" type="checkbox" /> Override BPM and Key</label>
             <div id="bpm-key-readonly-row" class="inline-pair">
@@ -187,6 +185,7 @@
               <label>BPM <input id="bpm-input" type="number" min="30" max="240" value="120" /></label>
               <label>Key <select id="key-select"></select></label>
             </div>
+            <label>Export file name <input id="export-name-input" type="text" placeholder="My Melody" /></label>
             <div class="toolbar-row transport-row">
               <button id="transport-play-btn">Play</button>
               <button id="transport-stop-btn">Stop</button>
@@ -242,7 +241,6 @@
               </label>
               <label><input id="snap-toggle" type="checkbox" checked /> Force notes into key</label>
               <label>Snap tolerance <input id="snap-cents-input" type="number" min="5" max="100" value="50" /></label>
-              <label>Export file name <input id="export-name-input" type="text" placeholder="My Melody" /></label>
               <div class="toolbar-row">
                 <button id="reset-advanced-btn">Reset Advanced to Auto Defaults</button>
               </div>

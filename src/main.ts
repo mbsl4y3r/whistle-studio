@@ -4,6 +4,7 @@ import { analyzeWithEssentia } from "./audio/essentia-client";
 import { AudioRecorder } from "./audio/recorder";
 import { renderArrangementToWavBlob, renderMelodyToWavBlob, WhistleSynth } from "./audio/synth";
 import { buildArrangement } from "./arranger";
+import { applyContinuityToArrangementWithStats } from "./continuity";
 import { AppDB } from "./db";
 import {
   exportArrangementJs,
@@ -17,6 +18,7 @@ import {
 import { KEYS, uid } from "./music";
 import {
   AnalysisMode,
+  ContinuityMode,
   FileRecord,
   FolderRecord,
   GridType,
@@ -60,7 +62,6 @@ const synthMuteBtn = document.querySelector<HTMLButtonElement>("#synth-mute-btn"
 const synthSeekInput = document.querySelector<HTMLInputElement>("#synth-seek-input")!;
 const synthTimeLabel = document.querySelector<HTMLElement>("#synth-time-label")!;
 const synthSpeedSelect = document.querySelector<HTMLSelectElement>("#synth-speed-select")!;
-const synthToneSelect = document.querySelector<HTMLSelectElement>("#synth-tone-select")!;
 const synthVolumeInput = document.querySelector<HTMLInputElement>("#synth-volume-input")!;
 const uploadInput = document.querySelector<HTMLInputElement>("#upload-input")!;
 const themeToggleBtn = document.querySelector<HTMLButtonElement>("#theme-toggle-btn")!;
@@ -80,6 +81,10 @@ const gridSelect = document.querySelector<HTMLSelectElement>("#grid-select")!;
 const analysisModeSelect = document.querySelector<HTMLSelectElement>("#analysis-mode-select")!;
 const outputStyleSelect = document.querySelector<HTMLSelectElement>("#output-style-select")!;
 const retroStyleSelect = document.querySelector<HTMLSelectElement>("#retro-style-select")!;
+const continuityModeSelect = document.querySelector<HTMLSelectElement>("#continuity-mode-select")!;
+const continuityIntensityInput = document.querySelector<HTMLInputElement>("#continuity-intensity-input")!;
+const continuityIntensityValue = document.querySelector<HTMLElement>("#continuity-intensity-value")!;
+const continuityIntensityWrap = document.querySelector<HTMLElement>("#continuity-intensity-wrap")!;
 const autoSummaryText = document.querySelector<HTMLElement>("#auto-summary-text")!;
 const advancedSettings = document.querySelector<HTMLDetailsElement>("#advancedSettings")!;
 const overrideAutoToggle = document.querySelector<HTMLInputElement>("#override-auto-toggle")!;
@@ -146,15 +151,7 @@ let synthSpeed = 1;
 let synthMuted = false;
 let synthVolumeBeforeMute = 0.8;
 
-type SynthTone = "whistle" | "nes" | "gba" | "organ" | "piano" | "guitar";
-const TONE_GAIN_COMP: Record<SynthTone, number> = {
-  whistle: 1.0,
-  nes: 0.72,
-  gba: 0.8,
-  organ: 0.62,
-  piano: 0.88,
-  guitar: 0.75
-};
+const NES_GAIN_COMP = 0.72;
 let synthUserVolume = 1;
 let synthRenderedUrl: string | null = null;
 let synthRenderToken = 0;
@@ -166,10 +163,6 @@ function advancedOverrideEnabled(project?: ProjectRecord): boolean {
 
 function bpmKeyOverrideEnabled(project?: ProjectRecord): boolean {
   return !!project?.overrideBpmKey;
-}
-
-if (synthToneSelect.value !== "nes") {
-  synthToneSelect.value = "nes";
 }
 
 for (const key of KEYS) {
@@ -219,7 +212,6 @@ function updateAdvancedUi(project?: ProjectRecord): void {
     scaleSelect,
     snapToggle,
     snapCentsInput,
-    exportNameInput,
     copySettingsBtn
   ];
   for (const el of controlledInputs) {
@@ -231,6 +223,15 @@ function updateAdvancedUi(project?: ProjectRecord): void {
 function updateThresholdReadouts(): void {
   rmsValueEl.textContent = Number(rmsInput.value).toFixed(3);
   clarityValueEl.textContent = Number(clarityInput.value).toFixed(2);
+  continuityIntensityValue.textContent = `${Math.round(Number(continuityIntensityInput.value))}`;
+}
+
+function applyContinuityUi(project?: ProjectRecord): void {
+  const mode = project?.continuityMode ?? "seamless";
+  continuityModeSelect.value = mode;
+  continuityIntensityInput.value = String(project?.continuityIntensity ?? 60);
+  continuityIntensityWrap.classList.toggle("hidden", mode !== "seamless");
+  updateThresholdReadouts();
 }
 
 function updateSynthButtons(): void {
@@ -292,27 +293,12 @@ function syncCurrentBeatWhilePlaying(project: ProjectRecord): void {
 }
 
 function applyEffectiveSynthVolume(): void {
-  const tone = (synthToneSelect.value as SynthTone) || "whistle";
-  const effective = synthMuted ? 0 : synthUserVolume * (TONE_GAIN_COMP[tone] ?? 1);
+  const effective = synthMuted ? 0 : synthUserVolume * NES_GAIN_COMP;
   synth.setVolume(Math.max(0, Math.min(1, effective)));
 }
 
-function synthToneOptions(tone: SynthTone) {
-  switch (tone) {
-    case "nes":
-      return { oscType: "square" as OscillatorType, attack: 0.002, decay: 0.04, sustain: 0.45, release: 0.03, vibratoCents: 6, highpassHz: 180, formantHz: 1800, formantQ: 4, secondHarmonic: 0.12, noiseAmount: 0 };
-    case "gba":
-      return { oscType: "triangle" as OscillatorType, attack: 0.003, decay: 0.05, sustain: 0.4, release: 0.04, vibratoCents: 8, highpassHz: 220, formantHz: 1900, formantQ: 5, secondHarmonic: 0.2, noiseAmount: 0.01 };
-    case "organ":
-      return { oscType: "sine" as OscillatorType, attack: 0.01, decay: 0.06, sustain: 0.75, release: 0.12, vibratoCents: 4, highpassHz: 140, formantHz: 1300, formantQ: 3, secondHarmonic: 0.18, noiseAmount: 0 };
-    case "piano":
-      return { oscType: "triangle" as OscillatorType, attack: 0.002, decay: 0.09, sustain: 0.2, release: 0.08, vibratoCents: 3, highpassHz: 260, formantHz: 2200, formantQ: 4, secondHarmonic: 0.28, noiseAmount: 0.015 };
-    case "guitar":
-      return { oscType: "sawtooth" as OscillatorType, attack: 0.002, decay: 0.08, sustain: 0.25, release: 0.09, vibratoCents: 2, highpassHz: 300, formantHz: 2400, formantQ: 3.2, secondHarmonic: 0.34, noiseAmount: 0.02 };
-    case "whistle":
-    default:
-      return { oscType: "sine" as OscillatorType, attack: 0.006, decay: 0.06, sustain: 0.5, release: 0.07, vibratoCents: 14, highpassHz: 320, formantHz: 2200, formantQ: 7, secondHarmonic: 0.08, noiseAmount: 0.01 };
-  }
+function synthToneOptions() {
+  return { oscType: "square" as OscillatorType, attack: 0.002, decay: 0.04, sustain: 0.45, release: 0.03, vibratoCents: 6, highpassHz: 180, formantHz: 1800, formantQ: 4, secondHarmonic: 0.12, noiseAmount: 0 };
 }
 
 async function refreshSynthPreviewAudio(project?: ProjectRecord): Promise<void> {
@@ -328,11 +314,10 @@ async function refreshSynthPreviewAudio(project?: ProjectRecord): Promise<void> 
   }
 
   try {
-    const tone = (synthToneSelect.value as SynthTone) || "nes";
-    const arrangement = (project.outputStyle ?? "auto_arrange") === "auto_arrange" ? project.arrangement : undefined;
+    const arrangement = project.arrangement;
     const blob = arrangement
       ? await renderArrangementToWavBlob(arrangement)
-      : await renderMelodyToWavBlob(project.melody, project.bpm, tone);
+      : await renderMelodyToWavBlob(project.melody, project.bpm, "nes");
     if (token !== synthRenderToken) return;
     const nextUrl = URL.createObjectURL(blob);
     if (synthRenderedUrl) URL.revokeObjectURL(synthRenderedUrl);
@@ -375,7 +360,7 @@ function stopSynthPlayback(project?: ProjectRecord): void {
 
 async function playSynthFromCurrentPosition(project: ProjectRecord): Promise<void> {
   if (!project.melody.length) return;
-  if (project.arrangement && (project.outputStyle ?? "auto_arrange") === "auto_arrange" && synthCurrentBeat <= 0) {
+  if (project.arrangement && synthCurrentBeat <= 0) {
     await synth.unlock();
     synth.playArrangement(project.arrangement);
     synthIsPlaying = true;
@@ -405,7 +390,7 @@ async function playSynthFromCurrentPosition(project: ProjectRecord): Promise<voi
 
   await synth.unlock();
   synthPlayTempoBpm = project.bpm * synthSpeed;
-  synth.playMelody(sliced, synthPlayTempoBpm, synthToneOptions((synthToneSelect.value as SynthTone) || "whistle"));
+  synth.playMelody(sliced, synthPlayTempoBpm, synthToneOptions());
   synthIsPlaying = true;
   synthPlayStartBeat = synthCurrentBeat;
   synthPlayStartAtMs = Date.now();
@@ -488,6 +473,8 @@ function ensureDefaultProject(folderId: string | null): ProjectRecord {
     analysisMode: "monophonic",
     outputStyle: "auto_arrange",
     retroStyle: "snes_lite",
+    continuityMode: "seamless",
+    continuityIntensity: 60,
     overrideAutoSettings: false,
     overrideBpmKey: false,
     triplets: false,
@@ -534,6 +521,26 @@ function resolveExportBaseName(project: ProjectRecord): string {
   return cleaned.length ? cleaned : "melody";
 }
 
+function buildFinalArrangement(project: ProjectRecord): { arrangement: ReturnType<typeof buildArrangement>; stats: { restsRemoved: number; restsShortened: number; fillsInserted: number } } {
+  const base = buildArrangement({
+    melody: project.melody,
+    bpm: project.bpm,
+    key: project.key,
+    scale: project.scale,
+    outputStyle: project.outputStyle,
+    retroStyle: project.retroStyle
+  });
+  return applyContinuityToArrangementWithStats(base, {
+    mode: (project.continuityMode ?? "seamless") as ContinuityMode,
+    intensity: project.continuityIntensity ?? 60,
+    bpm: project.bpm,
+    grid: project.grid,
+    triplets: project.triplets,
+    key: project.key,
+    scale: project.scale
+  });
+}
+
 function renderSegments(project: ProjectRecord): string {
   if (!project.segments.length) return "No segments yet.";
   return project.segments
@@ -552,11 +559,11 @@ function updateEditorFromProject(project?: ProjectRecord): void {
     segmentsViewEl.value = "No project selected.";
     warningText.textContent = "";
     exportNameInput.value = "";
-    exportNameInput.disabled = true;
     fileEditorEl.value = "";
     fileEditorEl.disabled = true;
     synthCurrentBeat = 0;
     updateBasicSummary(undefined);
+    applyContinuityUi(undefined);
     updateAdvancedUi(undefined);
     updateSynthUi(undefined);
     void refreshSynthPreviewAudio(undefined);
@@ -568,6 +575,7 @@ function updateEditorFromProject(project?: ProjectRecord): void {
   analysisModeSelect.value = project.analysisMode ?? "monophonic";
   outputStyleSelect.value = project.outputStyle ?? "auto_arrange";
   retroStyleSelect.value = project.retroStyle ?? "snes_lite";
+  applyContinuityUi(project);
   tripletToggle.checked = project.triplets;
   rmsInput.value = String(project.rmsThreshold);
   clarityInput.value = String(project.clarityThreshold);
@@ -581,7 +589,6 @@ function updateEditorFromProject(project?: ProjectRecord): void {
   snapToggle.checked = project.snapEnabled;
   snapCentsInput.value = String(project.snapToleranceCents);
   exportNameInput.value = project.exportBaseName ?? project.name;
-  exportNameInput.disabled = !advancedOverrideEnabled(project);
 
   jsonPreviewEl.textContent = JSON.stringify(project.melody, null, 2);
   segmentsViewEl.value = renderSegments(project);
@@ -639,6 +646,8 @@ function hydrateSettings(project: ProjectRecord): void {
   project.overrideBpmKey = overrideBpmKeyToggle.checked;
   project.outputStyle = outputStyleSelect.value as OutputStyle;
   project.retroStyle = retroStyleSelect.value as RetroStyle;
+  project.continuityMode = continuityModeSelect.value as ContinuityMode;
+  project.continuityIntensity = Number(continuityIntensityInput.value);
   if (project.overrideBpmKey) {
     project.bpm = Number(bpmInput.value);
     project.key = keySelect.value;
@@ -888,21 +897,19 @@ async function runAnalysis(): Promise<void> {
       keySelect.value = project.key;
       scaleSelect.value = project.scale;
     }
-    if ((project.outputStyle ?? "auto_arrange") === "auto_arrange") {
-      project.arrangement = buildArrangement({
-        melody: project.melody,
-        bpm: project.bpm,
-        key: project.key,
-        scale: project.scale,
-        outputStyle: project.outputStyle,
-        retroStyle: project.retroStyle
-      });
-    } else {
-      project.arrangement = undefined;
-    }
+    const continuityApplied = buildFinalArrangement(project);
+    project.arrangement = continuityApplied.arrangement;
 
     suggestedKeyText.textContent = `Suggested key: ${result.suggestedKey} ${result.suggestedScale}`;
     warningText.textContent = result.warning ?? "";
+    project.analysisDebug = {
+      ...(project.analysisDebug ?? {}),
+      ...result.debug,
+      continuityMode: project.continuityMode ?? "seamless",
+      continuityRemovedRests: continuityApplied.stats.restsRemoved,
+      continuityShortenedRests: continuityApplied.stats.restsShortened,
+      continuityFillsInserted: continuityApplied.stats.fillsInserted
+    };
 
     dirty = true;
     updateEditorFromProject(project);
@@ -1088,6 +1095,8 @@ function wireEvents(): void {
     project.analysisMode = "monophonic";
     project.outputStyle = "auto_arrange";
     project.retroStyle = "snes_lite";
+    project.continuityMode = "seamless";
+    project.continuityIntensity = 60;
     project.overrideAutoSettings = false;
     project.overrideBpmKey = false;
     project.triplets = false;
@@ -1303,6 +1312,8 @@ function wireEvents(): void {
       analysisMode: project.analysisMode,
       outputStyle: project.outputStyle ?? "auto_arrange",
       retroStyle: project.retroStyle ?? "snes_lite",
+      continuityMode: project.continuityMode ?? "seamless",
+      continuityIntensity: project.continuityIntensity ?? 60,
       overrideAutoSettings: project.overrideAutoSettings ?? false,
       overrideBpmKey: project.overrideBpmKey ?? false,
       triplets: project.triplets,
@@ -1317,7 +1328,6 @@ function wireEvents(): void {
       snapEnabled: project.snapEnabled,
       snapToleranceCents: project.snapToleranceCents,
       exportBaseName: project.exportBaseName ?? project.name,
-      tone: synthToneSelect.value,
       synthSpeed: synthSpeedSelect.value,
       synthVolume: synthVolumeInput.value
     };
@@ -1349,6 +1359,8 @@ function wireEvents(): void {
       analysisMode: project.analysisMode,
       outputStyle: project.outputStyle ?? "auto_arrange",
       retroStyle: project.retroStyle ?? "snes_lite",
+      continuityMode: project.continuityMode ?? "seamless",
+      continuityIntensity: project.continuityIntensity ?? 60,
       overrideAutoSettings: project.overrideAutoSettings ?? false,
       overrideBpmKey: project.overrideBpmKey ?? false,
       triplets: project.triplets,
@@ -1363,7 +1375,6 @@ function wireEvents(): void {
       snapEnabled: project.snapEnabled,
       snapToleranceCents: project.snapToleranceCents,
       exportBaseName: project.exportBaseName ?? project.name,
-      tone: synthToneSelect.value,
       synthSpeed: synthSpeedSelect.value,
       synthVolume: synthVolumeInput.value
     };
@@ -1403,26 +1414,16 @@ function wireEvents(): void {
       return;
     }
     const baseName = resolveExportBaseName(project);
-    const arrangement =
-      (project.outputStyle ?? "auto_arrange") === "auto_arrange"
-        ? project.arrangement ??
-          buildArrangement({
-            melody: project.melody,
-            bpm: project.bpm,
-            key: project.key,
-            scale: project.scale,
-            outputStyle: project.outputStyle,
-            retroStyle: project.retroStyle
-          })
-        : buildArrangement({
-            melody: project.melody,
-            bpm: project.bpm,
-            key: project.key,
-            scale: project.scale,
-            outputStyle: "lead_only",
-            retroStyle: project.retroStyle
-          });
+    const continuityApplied = buildFinalArrangement(project);
+    const arrangement = continuityApplied.arrangement;
     project.arrangement = arrangement;
+    project.analysisDebug = {
+      ...(project.analysisDebug ?? {}),
+      continuityMode: project.continuityMode ?? "seamless",
+      continuityRemovedRests: continuityApplied.stats.restsRemoved,
+      continuityShortenedRests: continuityApplied.stats.restsShortened,
+      continuityFillsInserted: continuityApplied.stats.fillsInserted
+    };
     const wavBlob = await renderArrangementToWavBlob(arrangement);
     exportWavBlob(baseName, wavBlob, ".arrangement");
     await saveCurrentProject();
@@ -1441,15 +1442,16 @@ function wireEvents(): void {
     exportMelodyJson(baseName, project.bpm, project.melody);
     exportMelodyJs(baseName, project.melody);
     exportMelodyMidi(baseName, project.melody, project.bpm);
-    const arrangement = buildArrangement({
-      melody: project.melody,
-      bpm: project.bpm,
-      key: project.key,
-      scale: project.scale,
-      outputStyle: project.outputStyle,
-      retroStyle: project.retroStyle
-    });
+    const continuityApplied = buildFinalArrangement(project);
+    const arrangement = continuityApplied.arrangement;
     project.arrangement = arrangement;
+    project.analysisDebug = {
+      ...(project.analysisDebug ?? {}),
+      continuityMode: project.continuityMode ?? "seamless",
+      continuityRemovedRests: continuityApplied.stats.restsRemoved,
+      continuityShortenedRests: continuityApplied.stats.restsShortened,
+      continuityFillsInserted: continuityApplied.stats.fillsInserted
+    };
     exportArrangementJson(baseName, arrangement);
     exportArrangementJs(baseName, arrangement);
     exportArrangementMidi(baseName, arrangement);
@@ -1608,10 +1610,13 @@ function wireEvents(): void {
 
   const settingInputs: Array<HTMLInputElement | HTMLSelectElement> = [
     bpmInput,
+    exportNameInput,
     gridSelect,
     analysisModeSelect,
     outputStyleSelect,
     retroStyleSelect,
+    continuityModeSelect,
+    continuityIntensityInput,
     tripletToggle,
     rmsInput,
     clarityInput,
@@ -1622,8 +1627,7 @@ function wireEvents(): void {
     keySelect,
     scaleSelect,
     snapToggle,
-    snapCentsInput,
-    exportNameInput
+    snapCentsInput
   ];
 
   for (const el of settingInputs) {
@@ -1631,7 +1635,8 @@ function wireEvents(): void {
       const project = getCurrentProject();
       if (!project) return;
       const isBpmChange = el === bpmInput;
-      const isBasicArrangementChange = el === outputStyleSelect || el === retroStyleSelect;
+      const isBasicArrangementChange =
+        el === outputStyleSelect || el === retroStyleSelect || el === continuityModeSelect || el === continuityIntensityInput || el === exportNameInput;
       const isBpmKeyEdit = el === keySelect || el === bpmInput;
       const wasPlaying = synthIsPlaying;
       let resumeRatio = 0;
@@ -1642,18 +1647,17 @@ function wireEvents(): void {
       }
       hydrateSettings(project);
       project.exportBaseName = exportNameInput.value.trim() || project.name;
+      applyContinuityUi(project);
       if (project.melody.length) {
-        project.arrangement =
-          (project.outputStyle ?? "auto_arrange") === "auto_arrange"
-            ? buildArrangement({
-                melody: project.melody,
-                bpm: project.bpm,
-                key: project.key,
-                scale: project.scale,
-                outputStyle: project.outputStyle,
-                retroStyle: project.retroStyle
-              })
-            : undefined;
+        const continuityApplied = buildFinalArrangement(project);
+        project.arrangement = continuityApplied.arrangement;
+        project.analysisDebug = {
+          ...(project.analysisDebug ?? {}),
+          continuityMode: project.continuityMode ?? "seamless",
+          continuityRemovedRests: continuityApplied.stats.restsRemoved,
+          continuityShortenedRests: continuityApplied.stats.restsShortened,
+          continuityFillsInserted: continuityApplied.stats.fillsInserted
+        };
       }
       dirty = true;
 
@@ -1725,17 +1729,6 @@ function wireEvents(): void {
     const project = getCurrentProject();
     synthSpeed = Number(synthSpeedSelect.value) || 1;
     if (project) updateSynthUi(project);
-    if (project && synthIsPlaying) {
-      void playSynthFromCurrentPosition(project);
-    }
-  });
-
-  synthToneSelect.addEventListener("change", () => {
-    const project = getCurrentProject();
-    applyEffectiveSynthVolume();
-    if (project) {
-      void refreshSynthPreviewAudio(project);
-    }
     if (project && synthIsPlaying) {
       void playSynthFromCurrentPosition(project);
     }
