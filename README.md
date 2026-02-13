@@ -1,6 +1,6 @@
 # Whistle Studio
 
-Whistle Studio is a browser-based melody capture tool for Mogojik workflows. It records or imports monophonic audio, detects pitch, converts it to a Mogojik-compatible melody array, and exports JSON, JS, and MIDI.
+Whistle Studio is a browser-based melody-capture tool for retro-gaming audio workflows. It records or imports monophonic and full-mix audio, detects pitch, converts it into a compatible melody array, and exports JSON, JS, and MIDI.
 
 ## Quick start
 
@@ -70,7 +70,7 @@ All app data uses IndexedDB:
 
 ## Output format
 
-Melody output matches Mogojik playback shape:
+Melody output matches playback shape:
 
 ```ts
 Array<{ note: "C4" | "D#5" | "Bb3" | "REST"; beats: number }>
