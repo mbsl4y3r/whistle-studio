@@ -13,6 +13,7 @@
           <button id="theme-toggle-btn" class="icon-btn" aria-label="Toggle theme" title="Toggle theme"></button>
           <button id="unlock-audio-btn">Unlock Audio</button>
           <button id="save-btn">Save Project</button>
+          <button id="export-wav-btn">Export WAV</button>
           <button id="export-all-btn">Export All</button>
           <span id="status-text" class="status">Ready</span>
         </div>
@@ -58,6 +59,8 @@
               <p><strong>Reset</strong>: clears generated segments and melody output.</p>
               <p><strong>Auto Settings</strong>: estimates RMS, clarity, pitch range, and min note length.</p>
               <p><strong>Analysis Mode</strong>: Monophonic for whistle/single voice, Full Mix Assist for dense songs.</p>
+              <p><strong>Output</strong>: Lead only exports single melody, Auto Arrange builds SNES-lite backing tracks.</p>
+              <p><strong>Style</strong>: SNES-lite is richer by default, NES is simpler and more chiptune-limited.</p>
               <p><strong>RMS threshold</strong>: loudness cutoff for note vs rest detection.</p>
               <p><strong>Clarity threshold</strong>: pitch confidence cutoff for valid note frames.</p>
               <p><strong>Triplets</strong>: quantizes timing to three evenly spaced notes per beat, useful for shuffle or swing-like rhythm feel.</p>
@@ -172,6 +175,18 @@
             <select id="analysis-mode-select">
               <option value="monophonic" selected>Monophonic</option>
               <option value="full_mix">Full Mix Assist</option>
+            </select>
+          </label>
+          <label>Output
+            <select id="output-style-select">
+              <option value="auto_arrange" selected>Auto Arrange</option>
+              <option value="lead_only">Lead only</option>
+            </select>
+          </label>
+          <label>Style
+            <select id="retro-style-select">
+              <option value="snes_lite" selected>SNES-lite</option>
+              <option value="nes">NES</option>
             </select>
           </label>
           <label><input id="triplet-toggle" type="checkbox" /> Triplets</label>

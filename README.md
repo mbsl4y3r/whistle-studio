@@ -1,15 +1,17 @@
 # Whistle Studio
 
-Whistle Studio is a browser-based melody-capture tool for retro-gaming audio workflows. It records or imports monophonic and full-mix audio, detects pitch, converts it into a compatible melody array, and exports JSON, JS, and MIDI.
+Whistle Studio converts recorded or uploaded audio into retro game music assets.
 
-## Quick start
+- Input: mic recording or uploaded audio (`audio/*`)
+- Analysis: monophonic mode plus full-mix predominant melody extraction (Essentia Melodia backend, lazy loaded)
+- Output: melody + SNES-lite/NES arrangement for game use
+
+## Quick Start
 
 ```bash
 npm install
 npm run dev
 ```
-
-Build and preview:
 
 ```bash
 npm run build
@@ -22,63 +24,70 @@ LAN dev server:
 npm run dev:lan
 ```
 
-## Secure context and microphone
+## Mic and HTTPS
 
-Browser microphone access requires a secure context.
+- `localhost` works for local desktop mic use.
+- iPhone Safari mic requires HTTPS, use GitHub Pages deployment.
 
-- Local: `http://localhost` works for desktop development.
-- iPhone Safari: use the GitHub Pages HTTPS deployment URL.
+GitHub Pages URL pattern:
 
-## GitHub Pages setup
+`https://<user>.github.io/whistle-studio/`
 
-1. Push this repo to GitHub.
-2. In GitHub repo settings, open **Pages**.
-3. Under **Build and deployment**, set source to **GitHub Actions**.
-4. Push to `main` to trigger `.github/workflows/deploy-pages.yml`.
-
-Expected Pages URL pattern:
-
-`https://<your-user>.github.io/whistle-studio/`
-
-For this repository:
+For this repo:
 
 `https://mbsl4y3r.github.io/whistle-studio/`
 
-## How to use
+## Workflow
 
-1. Create or select a project in the left panel.
-2. Record audio or upload an audio file.
-3. Click **Analyze** to generate note segments and melody.
-4. Adjust settings in the right panel:
-   - BPM, grid, optional triplets
-   - RMS and clarity thresholds for rest detection
-   - key mode (auto/manual), key and scale
-   - snap to key and cents tolerance
-5. Preview generated JSON in the bottom panel.
-6. Use **Export All** to download:
-   - `<project>.melody.json`
-   - `<project>.melody.js`
-   - `<project>.mid`
+1. Create/select a project.
+2. Record or upload audio.
+3. Click `Analyze`.
+4. Tune settings or use `Auto Detect Settings`.
+5. Choose `Output`:
+   - `Auto Arrange` (default)
+   - `Lead only`
+6. Choose `Style`:
+   - `SNES-lite` (default)
+   - `NES`
+7. Export with `Export All` or `Export WAV`.
 
-## Virtual filesystem and persistence
+## Exports
 
-All app data uses IndexedDB:
+`Export All` writes:
 
-- `folders` store for folder hierarchy with soft delete.
-- `projects` store for melody settings, melody, segments, raw audio blob, and metadata.
-- Trash supports restore and permanent delete via **Empty Trash**.
+- `<name>.melody.json`
+- `<name>.melody.js`
+- `<name>.mid` (now includes Program Change, default square lead)
+- `<name>.arrangement.json`
+- `<name>.arrangement.js`
+- `<name>.arrangement.mid`
+- `<name>.arrangement.wav`
 
-## Output format
+`Export WAV` writes:
 
-Melody output matches playback shape:
+- `<name>.arrangement.wav`
 
-```ts
-Array<{ note: "C4" | "D#5" | "Bb3" | "REST"; beats: number }>
-```
+## MIDI Notes
 
-## Known limitations
+- Melody MIDI now emits Program Change at tick 0.
+- Program used for lead is GM Lead 1 (Square), value `80` in MIDI byte form.
+- Arrangement MIDI uses role-based channels (`lead`, `harmony`, `bass`, `drums` on ch 10 / index 9).
 
-- Monophonic sources are recommended.
-- Chords or full-song mixes are likely to transcribe poorly.
-- Tempo is not auto-detected in v1, BPM is user controlled.
-- Some browsers may limit recording MIME types, fallback WAV capture is included.
+## Local Test Audio
+
+Use `test-audio/` for local files. It is gitignored and will not be committed.
+
+## Persistence
+
+All data is in IndexedDB:
+
+- folders
+- projects
+- files
+- trash/restore/empty-trash workflow
+
+## Notes
+
+- Best recognizability is from clear lead lines.
+- Dense polyphonic material can still produce imperfect melodies.
+- Essentia.js is used for full-mix predominant melody extraction and is loaded on first analysis.

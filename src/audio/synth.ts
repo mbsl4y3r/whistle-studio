@@ -1,4 +1,4 @@
-import { MelodyStep } from "../types";
+import { Arrangement, ArrangementTrack, MelodyStep } from "../types";
 import { noteNameToMidi, midiToFreq } from "../music";
 
 interface PlayOptions {
@@ -106,6 +106,29 @@ export class WhistleSynth {
     this.timer = window.setInterval(scheduler, 100);
   }
 
+  playArrangement(arrangement: Arrangement): void {
+    this.stop();
+    const startAt = this.context.currentTime + 0.05;
+    for (const track of arrangement.tracks) {
+      this.scheduleTrack(track, arrangement.bpm, startAt);
+    }
+  }
+
+  private scheduleTrack(track: ArrangementTrack, bpm: number, startAt: number): void {
+    let t = startAt;
+    const options = trackPresetToPlayOptions(track.tonePreset);
+    for (const step of track.steps) {
+      const durationSec = (60 / bpm) * step.beats;
+      if (step.note !== "REST") {
+        const midi = noteNameToMidi(step.note);
+        if (midi != null) {
+          this.scheduleVoice(midiToFreq(midi), t, durationSec, options);
+        }
+      }
+      t += durationSec;
+    }
+  }
+
   private scheduleVoice(freq: number, start: number, duration: number, options: PlayOptions): void {
     const attack = options.attack ?? 0.006;
     const decay = options.decay ?? 0.06;
@@ -191,6 +214,27 @@ export class WhistleSynth {
 }
 
 export type SynthTonePreset = "whistle" | "nes" | "gba" | "organ" | "piano" | "guitar";
+
+function trackPresetToPlayOptions(preset: ArrangementTrack["tonePreset"]): PlayOptions {
+  switch (preset) {
+    case "pulse_lead":
+      return { oscType: "square", attack: 0.002, decay: 0.04, sustain: 0.4, release: 0.03, vibratoHz: 5, vibratoCents: 4, highpassHz: 180, formantHz: 1600, formantQ: 3, secondHarmonic: 0.06, noiseAmount: 0 };
+    case "warm_square":
+      return { oscType: "square", attack: 0.005, decay: 0.06, sustain: 0.45, release: 0.08, vibratoHz: 4.5, vibratoCents: 5, highpassHz: 140, formantHz: 1450, formantQ: 3.2, secondHarmonic: 0.12, noiseAmount: 0 };
+    case "soft_saw":
+      return { oscType: "sawtooth", attack: 0.01, decay: 0.09, sustain: 0.35, release: 0.12, vibratoHz: 4.2, vibratoCents: 3, highpassHz: 120, formantHz: 1200, formantQ: 2.8, secondHarmonic: 0.16, noiseAmount: 0 };
+    case "fm_bell":
+      return { oscType: "triangle", attack: 0.001, decay: 0.12, sustain: 0.1, release: 0.1, vibratoHz: 6, vibratoCents: 2, highpassHz: 230, formantHz: 2300, formantQ: 5, secondHarmonic: 0.35, noiseAmount: 0 };
+    case "bass_pick":
+      return { oscType: "triangle", attack: 0.002, decay: 0.09, sustain: 0.3, release: 0.08, vibratoHz: 3.5, vibratoCents: 1, highpassHz: 70, formantHz: 950, formantQ: 2.2, secondHarmonic: 0.18, noiseAmount: 0 };
+    case "snes_pad":
+      return { oscType: "sine", attack: 0.03, decay: 0.12, sustain: 0.72, release: 0.18, vibratoHz: 4.2, vibratoCents: 2.5, highpassHz: 90, formantHz: 1100, formantQ: 2, secondHarmonic: 0.1, noiseAmount: 0 };
+    case "noise_kit":
+      return { oscType: "triangle", attack: 0.001, decay: 0.04, sustain: 0.05, release: 0.03, vibratoHz: 1, vibratoCents: 0, highpassHz: 300, formantHz: 2400, formantQ: 1.5, secondHarmonic: 0.1, noiseAmount: 0.06 };
+    default:
+      return toneOptions("nes");
+  }
+}
 
 function toneOptions(tone: SynthTonePreset): Required<Pick<PlayOptions, "attack" | "decay" | "sustain" | "release" | "vibratoHz" | "vibratoCents" | "formantHz" | "formantQ" | "highpassHz" | "oscType" | "secondHarmonic" | "noiseAmount">> {
   switch (tone) {
@@ -333,6 +377,54 @@ export async function renderMelodyToWavBlob(
     lfo.stop(t + dur + 0.05);
 
     t += dur;
+  }
+
+  const rendered = await offline.startRendering();
+  return writeWavMono(rendered.getChannelData(0), rendered.sampleRate);
+}
+
+export async function renderArrangementToWavBlob(arrangement: Arrangement): Promise<Blob> {
+  const sampleRate = 44100;
+  let beats = 0;
+  for (const t of arrangement.tracks) {
+    const total = t.steps.reduce((acc, s) => acc + s.beats, 0);
+    if (total > beats) beats = total;
+  }
+  const totalSec = Math.max(0.5, (60 / arrangement.bpm) * beats + 0.3);
+  const frameCount = Math.ceil(totalSec * sampleRate);
+  const offline = new OfflineAudioContext(1, frameCount, sampleRate);
+  const master = offline.createGain();
+  master.gain.value = 0.48;
+  master.connect(offline.destination);
+
+  for (const t of arrangement.tracks) {
+    let cursor = 0.05;
+    const opt = trackPresetToPlayOptions(t.tonePreset);
+    for (const step of t.steps) {
+      const dur = Math.max(0.01, (60 / arrangement.bpm) * step.beats);
+      if (step.note !== "REST") {
+        const midi = noteNameToMidi(step.note);
+        if (midi != null) {
+          const freq = midiToFreq(midi);
+          const osc = offline.createOscillator();
+          osc.type = opt.oscType ?? "sine";
+          osc.frequency.value = freq;
+          const gain = offline.createGain();
+          gain.gain.setValueAtTime(0.0001, cursor);
+          gain.gain.linearRampToValueAtTime(1, cursor + (opt.attack ?? 0.01));
+          gain.gain.linearRampToValueAtTime(opt.sustain ?? 0.4, cursor + (opt.attack ?? 0.01) + (opt.decay ?? 0.08));
+          const relStart = Math.max(cursor + (opt.attack ?? 0.01) + (opt.decay ?? 0.08), cursor + dur - (opt.release ?? 0.05));
+          gain.gain.setValueAtTime(opt.sustain ?? 0.4, relStart);
+          gain.gain.linearRampToValueAtTime(0.0001, cursor + dur);
+
+          osc.connect(gain);
+          gain.connect(master);
+          osc.start(cursor);
+          osc.stop(cursor + dur + 0.05);
+        }
+      }
+      cursor += dur;
+    }
   }
 
   const rendered = await offline.startRendering();
