@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whistle Studio</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <h1>Whistle Studio</h1>
+        <div class="topbar-actions">
+          <button id="unlock-audio-btn">Unlock Audio</button>
+          <button id="save-btn">Save</button>
+          <button id="export-all-btn">Export All</button>
+          <span id="status-text" class="status">Ready</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="panel left-panel">
+          <div class="panel-header">
+            <h2>Library</h2>
+            <button id="toggle-trash-btn">Trash</button>
+          </div>
+          <div class="toolbar-row">
+            <button id="new-folder-btn">New Folder</button>
+            <button id="rename-folder-btn">Rename</button>
+            <button id="delete-folder-btn">Delete</button>
+          </div>
+          <ul id="folder-tree" class="list"></ul>
+          <div class="panel-subheader">
+            <h3>Projects</h3>
+          </div>
+          <div class="toolbar-row">
+            <button id="new-project-btn">New</button>
+            <button id="rename-project-btn">Rename</button>
+            <button id="move-project-btn">Move</button>
+            <button id="delete-project-btn">Delete</button>
+          </div>
+          <ul id="project-list" class="list"></ul>
+          <div id="trash-actions" class="toolbar-row hidden">
+            <button id="restore-btn">Restore</button>
+            <button id="empty-trash-btn" class="danger">Empty Trash</button>
+          </div>
+        </aside>
+
+        <section class="panel center-panel">
+          <h2>Capture and Analyze</h2>
+          <div class="capture-controls">
+            <button id="record-btn">Record</button>
+            <button id="pause-btn" disabled>Pause</button>
+            <button id="resume-btn" disabled>Resume</button>
+            <button id="stop-btn" disabled>Stop</button>
+            <input id="upload-input" type="file" accept="audio/*" />
+          </div>
+          <div class="capture-controls">
+            <button id="analyze-btn">Analyze</button>
+            <button id="play-btn">Play</button>
+            <button id="stop-play-btn">Stop</button>
+          </div>
+          <audio id="audio-preview" controls></audio>
+          <div id="analysis-warning" class="warning"></div>
+          <div class="segments-wrap">
+            <h3>Segments</h3>
+            <div id="segments-view" class="segments-view"></div>
+          </div>
+        </section>
+
+        <aside class="panel right-panel">
+          <h2>Settings</h2>
+          <label>BPM <input id="bpm-input" type="number" min="30" max="240" value="120" /></label>
+          <label>Grid
+            <select id="grid-select">
+              <option value="quarter">Quarter</option>
+              <option value="eighth" selected>Eighth</option>
+              <option value="sixteenth">Sixteenth</option>
+            </select>
+          </label>
+          <label><input id="triplet-toggle" type="checkbox" /> Triplets</label>
+          <label>RMS threshold <input id="rms-input" type="range" min="0.001" max="0.1" step="0.001" value="0.02" /></label>
+          <label>Clarity threshold <input id="clarity-input" type="range" min="0.1" max="0.99" step="0.01" value="0.75" /></label>
+          <label>Min note ms <input id="min-note-ms-input" type="number" min="20" max="500" value="80" /></label>
+          <label>Pitch range Hz
+            <div class="inline-pair">
+              <input id="min-hz-input" type="number" min="50" max="1200" value="200" />
+              <input id="max-hz-input" type="number" min="500" max="5000" value="2500" />
+            </div>
+          </label>
+          <label>Key mode
+            <select id="key-mode-select">
+              <option value="auto" selected>Auto</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label>Key <select id="key-select"></select></label>
+          <label>Scale
+            <select id="scale-select">
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+            </select>
+          </label>
+          <label><input id="snap-toggle" type="checkbox" checked /> Snap to key</label>
+          <label>Snap tolerance cents <input id="snap-cents-input" type="number" min="5" max="100" value="50" /></label>
+          <p id="suggested-key-text" class="status"></p>
+        </aside>
+      </main>
+
+      <section class="panel bottom-panel">
+        <h2>Melody JSON Preview</h2>
+        <pre id="json-preview"></pre>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
