@@ -18,29 +18,6 @@
 
       <main class="layout">
         <aside class="panel left-panel">
-          <div class="panel-header">
-            <h2>AI Music</h2>
-          </div>
-          <label>Prompt
-            <textarea id="ai-prompt-input" class="ai-prompt" placeholder="Example: 30 second SNES-style adventure loop, bright melody, steady drums."></textarea>
-          </label>
-          <label>Style hint
-            <select id="ai-style-select">
-              <option value="snes_lite" selected>SNES-lite</option>
-              <option value="nes">NES</option>
-              <option value="chiptune">Chiptune</option>
-            </select>
-          </label>
-          <label>Duration (seconds)
-            <input id="ai-duration-input" type="number" min="5" max="120" value="30" />
-          </label>
-          <div class="toolbar-row">
-            <button id="ai-generate-btn">Generate 30s Clip</button>
-          </div>
-          <p class="help-text">
-            Requires a local backend endpoint at <code>/api/generate-music</code>. If unavailable, upload audio manually.
-          </p>
-
           <section class="legacy-library hidden" aria-hidden="true">
             <button id="toggle-trash-btn">Trash</button>
             <div class="toolbar-row">
